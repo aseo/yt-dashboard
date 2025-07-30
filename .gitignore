@@ -2,6 +2,7 @@
 client_secret.json
 token.json
 .env
+PRODUCTION_CREDENTIALS.md
 
 # Cache files
 videos_cache_*.json
