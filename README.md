@@ -1,75 +1,48 @@
-# YouTube Analytics Dashboard
+# YouTube Dashboard
 
-A modern, local web dashboard for analyzing your YouTube video metrics. Built with Flask, Tailwind CSS, and Chart.js.
+A simple YouTube analytics dashboard for creators to track their video performance (ADV and % Wathced).
 
-## Features
+## What it does
 
-- 📊 **Real-time Analytics**: View your latest video performance metrics
-- 📈 **Interactive Charts**: Visualize views, engagement rates, and trends
-- 🎯 **Key Metrics**: Total views, likes, subscribers gained, and average watch time
-- 📱 **Responsive Design**: Works great on desktop and mobile devices
-- 🔄 **Auto-refresh**: Keep your data up to date with the refresh button
-- 🎨 **Modern UI**: Beautiful gradient design with hover effects
+- **Average View Duration (AVD)** - See how long viewers watch your videos
+- **% Watched** - Track viewer retention and engagement
+- **Other metrics** - Views, likes, length, subscribers gained
+- **Sorting** - Sort by any column to find your best performing content
+- **Pagination** - Browse through all your videos easily
 
-## Setup
+## Key Features
 
-1. **Install Dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+- **Clean interface** - Focus on what matters most
+- **Real-time data** - Fresh metrics from YouTube APIs
+- **Mobile-friendly** - Works on all devices
+- **Fast loading** - Cached data for quick access
 
-2. **Google API Setup**:
-   - Make sure you have `client_secret.json` in your project directory
-   - The app will automatically authenticate on first run
-   - Your authentication token will be saved in `token.json`
+## For Creators
 
-3. **Run the Dashboard**:
-   ```bash
-   python app.py
-   ```
+This dashboard helps you understand:
+- Which videos keep viewers engaged longest
+- What content has the best retention rates
+- Benchmark your own videos that worked well
 
-4. **Access the Dashboard**:
-   Open your browser and go to `http://localhost:5000`
-
-## API Endpoints
-
-- `GET /` - Main dashboard page
-- `GET /api/videos` - Get video analytics data
-- `GET /api/channel` - Get channel information
-
-## Data Sources
-
-The dashboard pulls data from:
-- **YouTube Data API v3**: Basic video information and statistics
-- **YouTube Analytics API v2**: Detailed analytics metrics
-
-## Metrics Tracked
-
-- **Views**: Total view count per video
-- **Likes**: Total likes per video
-- **Average View Duration**: How long viewers watch on average
-- **Average View Percentage**: Percentage of video watched
-- **Subscribers Gained**: New subscribers from each video
-- **Video Length**: Duration of each video
-- **Publish Date**: When each video was published
-
-## Customization
-
-You can easily customize the dashboard by:
-- Modifying the date range in `app.py` (currently set to 2025-01-01 to today)
-- Adding new metrics to the analytics API calls
-- Styling the frontend with Tailwind CSS classes
-- Adding new chart types using Chart.js
-
-## Troubleshooting
-
-- **Authentication Issues**: Delete `token.json` and restart the app to re-authenticate
-- **No Data**: Make sure your videos have analytics data available (may take time for new videos)
-- **API Quotas**: Be mindful of YouTube API quotas for large channels
-
-## Technologies Used
+## Tech Stack
 
 - **Backend**: Flask (Python)
-- **Frontend**: HTML5, Tailwind CSS, Chart.js
+- **Frontend**: HTML, JavaScript, Tailwind CSS
 - **APIs**: YouTube Data API v3, YouTube Analytics API v2
-- **Icons**: Font Awesome 
+- **Hosting**: Render (free tier)
+
+## Quick Start
+
+1. Clone the repository
+2. Install dependencies: `pip install -r requirements.txt`
+3. Set up Google OAuth credentials
+4. Run: `python app.py`
+5. Visit: `http://localhost:5000`
+
+## Live Demo
+
+[Coming soon - will be deployed to Render]
+
+## License
+
+MIT License - feel free to use and modify. 
