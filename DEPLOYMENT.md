@@ -50,7 +50,7 @@ GOOGLE_CREDENTIALS={"token":"...","refresh_token":"...","token_uri":"...","clien
 ### 6. Deploy
 - Click "Create Web Service"
 - Render will build and deploy automatically
-- Your app will be available at `https://youtube-analytics-dashboard.onrender.com`
+- Your app will be available at `https://yt-dashboard.onrender.com`
 
 ### 7. Update OAuth Redirect URIs
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
@@ -58,7 +58,7 @@ GOOGLE_CREDENTIALS={"token":"...","refresh_token":"...","token_uri":"...","clien
 3. Go to "APIs & Services" > "Credentials"
 4. Edit your OAuth 2.0 Client ID
 5. Add to "Authorized redirect URIs":
-   - `https://youtube-analytics-dashboard.onrender.com/oauth2callback`
+   - `https://yt-dashboard.onrender.com/oauth2callback`
 6. Save changes
 
 ## Security Checklist
