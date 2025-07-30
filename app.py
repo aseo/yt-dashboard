@@ -350,7 +350,15 @@ def get_channel():
         # Get credentials first
         creds = get_credentials()
         if not creds:
-            return jsonify({"error": "Authentication required. Please check your credentials."}), 401
+            return jsonify({
+                "title": "YouTube Dashboard",
+                "description": "Sign in to view your channel",
+                "thumbnail": "",
+                "subscriberCount": 0,
+                "videoCount": 0,
+                "viewCount": 0,
+                "error": "Authentication required"
+            }), 401
         
         youtube = build("youtube", "v3", credentials=creds)
         
@@ -370,9 +378,30 @@ def get_channel():
                 "videoCount": channel["statistics"].get("videoCount", 0),
                 "viewCount": channel["statistics"].get("viewCount", 0)
             })
-        return jsonify({"error": "No channel found"}), 404
+        
+        # Fallback if no channel found
+        return jsonify({
+            "title": "YouTube Dashboard",
+            "description": "No channel found",
+            "thumbnail": "",
+            "subscriberCount": 0,
+            "videoCount": 0,
+            "viewCount": 0,
+            "error": "No channel found"
+        }), 404
+        
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Channel API error: {e}")
+        # Fallback on any error
+        return jsonify({
+            "title": "YouTube Dashboard",
+            "description": "Error loading channel",
+            "thumbnail": "",
+            "subscriberCount": 0,
+            "videoCount": 0,
+            "viewCount": 0,
+            "error": "Channel loading failed"
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000) 

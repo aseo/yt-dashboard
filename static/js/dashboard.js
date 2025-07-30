@@ -54,17 +54,49 @@ function getWatchPercentageColor(watchPercent, videoLength) {
 async function loadChannelInfo() {
     try {
         const response = await fetch('/api/channel');
-        const channel = await response.json();
+        const data = await response.json();
         
-        document.getElementById('channel-info').innerHTML = `
-            <div class="flex items-center space-x-2">
-                <img src="${channel.thumbnail}" alt="Channel" class="w-8 h-8 rounded-full">
-                <span class="font-medium">${channel.title}</span>
-            </div>
-        `;
+        const channelInfo = document.getElementById('channel-info');
+        
+        if (response.ok && !data.error) {
+            // Success - show channel info
+            channelInfo.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <img class="w-8 h-8 rounded-full" src="${data.thumbnail}" alt="${data.title}">
+                    <div>
+                        <div class="font-medium">${data.title}</div>
+                        <div class="text-xs opacity-75">${formatNumber(data.subscriberCount)} subscribers</div>
+                    </div>
+                </div>
+            `;
+        } else {
+            // Error or authentication required - show sign-in button
+            channelInfo.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <div class="text-sm opacity-75">${data.title || 'YouTube Dashboard'}</div>
+                    <button onclick="signIn()" class="px-3 py-1 text-xs bg-white bg-opacity-20 rounded hover:bg-opacity-30 transition-colors">
+                        Sign In
+                    </button>
+                </div>
+            `;
+        }
     } catch (error) {
         console.error('Error loading channel info:', error);
+        const channelInfo = document.getElementById('channel-info');
+        channelInfo.innerHTML = `
+            <div class="flex items-center space-x-2">
+                <div class="text-sm opacity-75">YouTube Dashboard</div>
+                <button onclick="signIn()" class="px-3 py-1 text-xs bg-white bg-opacity-20 rounded hover:bg-opacity-30 transition-colors">
+                    Sign In
+                </button>
+            </div>
+        `;
     }
+}
+
+// Sign in function (placeholder for now)
+function signIn() {
+    alert('Sign-in feature coming soon! For now, this dashboard is configured for a single user.');
 }
 
 // Load videos data
@@ -263,14 +295,6 @@ function updateTable() {
     updatePagination();
 }
 
-// Refresh all data
-function refreshData() {
-    loadChannelInfo();
-    loadVideos(true); // Force refresh
-}
-
-
-
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', function() {
     loadChannelInfo();
@@ -279,4 +303,4 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add event listeners for pagination
     document.getElementById('prev-page').addEventListener('click', prevPage);
     document.getElementById('next-page').addEventListener('click', nextPage);
-}); 
+});
