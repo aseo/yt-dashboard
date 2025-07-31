@@ -190,16 +190,20 @@ def login():
 def google_auth():
     """Handle Google OAuth"""
     try:
+        print(f"🔐 OAuth request from: {request.host_url}")
         result = authenticate()
         
         # Check if we're in production (result is auth URL) or development (result is creds)
         if isinstance(result, str):
             # Production: redirect to Google OAuth
+            print(f"🔐 Production OAuth - redirecting to: {result}")
             return redirect(result)
         elif result:
             # Development: OAuth completed, redirect to dashboard
+            print("✅ Development OAuth completed")
             return redirect(url_for('index'))
         else:
+            print("❌ Authentication failed - no result")
             flash('Authentication failed. Please try again.', 'error')
             return redirect(url_for('index'))
     except Exception as e:
@@ -211,6 +215,8 @@ def google_auth():
 def google_auth_callback():
     """Handle Google OAuth callback (production only)"""
     try:
+        print(f"🔄 OAuth callback received: {request.url}")
+        
         # Load client secrets
         if os.environ.get('GOOGLE_CREDENTIALS'):
             client_config = json.loads(os.environ.get('GOOGLE_CREDENTIALS'))
