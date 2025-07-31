@@ -117,37 +117,58 @@ def authenticate():
             with open(client_secrets_file, 'r') as f:
                 client_config = json.load(f)
         
-        # Create OAuth flow
-        flow = InstalledAppFlow.from_client_config(
-            client_config,
-            scopes=SCOPES,
-            redirect_uri='http://localhost:8080/'
-        )
+        # Determine if we're in production
+        is_production = request.host_url.startswith('https://')
         
-        # Run OAuth flow
-        print("🔐 Starting OAuth flow...")
-        try:
-            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
-        except OSError as e:
-            if "Address already in use" in str(e):
-                print("🔄 Port 8080 busy, trying port 8081...")
-                creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
-            else:
-                raise e
-        
-        # Store credentials in session
-        session['user_credentials'] = {
-            'token': creds.token,
-            'refresh_token': creds.refresh_token,
-            'token_uri': creds.token_uri,
-            'client_id': creds.client_id,
-            'client_secret': creds.client_secret,
-            'scopes': creds.scopes
-        }
-        session.modified = True
-        
-        print("✅ OAuth completed - credentials stored in session")
-        return creds
+        if is_production:
+            # Production: Use web-based OAuth flow
+            redirect_uri = 'https://yt-dashboard.onrender.com/auth/google/callback'
+            flow = InstalledAppFlow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri=redirect_uri
+            )
+            
+            # Generate authorization URL
+            auth_url, _ = flow.authorization_url(
+                access_type='offline',
+                prompt='consent'
+            )
+            
+            print(f"🔐 Production OAuth - redirecting to: {auth_url}")
+            return auth_url
+        else:
+            # Development: Use local server
+            flow = InstalledAppFlow.from_client_config(
+                client_config,
+                scopes=SCOPES,
+                redirect_uri='http://localhost:8080/'
+            )
+            
+            # Run OAuth flow
+            print("🔐 Starting OAuth flow...")
+            try:
+                creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+            except OSError as e:
+                if "Address already in use" in str(e):
+                    print("🔄 Port 8080 busy, trying port 8081...")
+                    creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
+                else:
+                    raise e
+            
+            # Store credentials in session
+            session['user_credentials'] = {
+                'token': creds.token,
+                'refresh_token': creds.refresh_token,
+                'token_uri': creds.token_uri,
+                'client_id': creds.client_id,
+                'client_secret': creds.client_secret,
+                'scopes': creds.scopes
+            }
+            session.modified = True
+            
+            print("✅ OAuth completed - credentials stored in session")
+            return creds
         
     except Exception as e:
         print(f"❌ OAuth error: {e}")
@@ -169,16 +190,63 @@ def login():
 def google_auth():
     """Handle Google OAuth"""
     try:
-        creds = authenticate()
-        if creds:
+        result = authenticate()
+        
+        # Check if we're in production (result is auth URL) or development (result is creds)
+        if isinstance(result, str):
+            # Production: redirect to Google OAuth
+            return redirect(result)
+        elif result:
+            # Development: OAuth completed, redirect to dashboard
             return redirect(url_for('index'))
         else:
             flash('Authentication failed. Please try again.', 'error')
-            return redirect(url_for('login'))
+            return redirect(url_for('index'))
     except Exception as e:
         print(f"❌ Authentication error: {e}")
         flash('Authentication error. Please try again.', 'error')
-        return redirect(url_for('login'))
+        return redirect(url_for('index'))
+
+@app.route('/auth/google/callback')
+def google_auth_callback():
+    """Handle Google OAuth callback (production only)"""
+    try:
+        # Load client secrets
+        if os.environ.get('GOOGLE_CREDENTIALS'):
+            client_config = json.loads(os.environ.get('GOOGLE_CREDENTIALS'))
+        else:
+            with open('client_secret.json', 'r') as f:
+                client_config = json.load(f)
+        
+        # Create OAuth flow
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri='https://yt-dashboard.onrender.com/auth/google/callback'
+        )
+        
+        # Exchange authorization code for credentials
+        flow.fetch_token(authorization_response=request.url)
+        creds = flow.credentials
+        
+        # Store credentials in session
+        session['user_credentials'] = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        }
+        session.modified = True
+        
+        print("✅ Production OAuth completed - credentials stored in session")
+        return redirect(url_for('index'))
+        
+    except Exception as e:
+        print(f"❌ OAuth callback error: {e}")
+        flash('Authentication failed. Please try again.', 'error')
+        return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
