@@ -251,14 +251,38 @@ async function loadVideos(forceRefresh = false) {
                 } else {
                     console.log('🔄 Fresh data loaded from YouTube APIs');
                 }
+                
+                // Check if there are no videos
+                if (data.videos.length === 0) {
+                    document.getElementById('videos-table').innerHTML = `
+                        <tr>
+                            <td colspan="8" class="px-6 py-12 text-center">
+                                <div class="flex flex-col items-center space-y-6">
+                                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center">
+                                        <i class="fas fa-video-slash text-gray-400 text-2xl"></i>
+                                    </div>
+                                    <div class="text-center">
+                                        <h3 class="text-lg font-medium text-gray-900 mb-2">No public videos found</h3>
+                                        <p class="text-gray-500 mb-6">This channel doesn't have any publicly published videos, or all videos are private/unlisted.</p>
+                                        <button onclick="refreshData()" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                                            <i class="fas fa-sync-alt mr-2"></i>
+                                            Try Again
+                                        </button>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    updateTable();
+                }
             } else {
                 // Fallback for old data structure
                 videosData = data;
                 totalVideosFetched = data.length;
                 totalVideosAvailable = data.length;
+                updateTable();
             }
-            
-            updateTable();
         } else {
             // User is not authenticated - show sign in placeholder
             document.getElementById('videos-table').innerHTML = `
@@ -302,9 +326,15 @@ function updateVideoCount() {
     const countElement = document.getElementById('video-count');
     if (countElement) {
         if (totalVideosFetched === 0 && totalVideosAvailable === 0) {
-            // User is not authenticated
-            countElement.textContent = 'Sign in to view your videos';
-            countElement.className = 'text-sm text-gray-500';
+            // Check if user is authenticated but has no videos
+            if (videosData && videosData.length === 0) {
+                countElement.textContent = 'No public videos found';
+                countElement.className = 'text-sm text-gray-500';
+            } else {
+                // User is not authenticated
+                countElement.textContent = 'Sign in to view your videos';
+                countElement.className = 'text-sm text-gray-500';
+            }
         } else if (totalVideosAvailable > totalVideosFetched) {
             countElement.textContent = `Showing ${totalVideosFetched} of ${totalVideosAvailable} videos`;
             countElement.className = 'text-sm text-gray-600';

@@ -283,6 +283,9 @@ def not_found(e):
 @app.route('/api/channel')
 def get_channel():
     """Get channel information"""
+    print(f"🔍 DEBUG: Channel API - Session keys: {list(session.keys())}")
+    print(f"🔍 DEBUG: Channel API - Has user_credentials: {'user_credentials' in session}")
+    
     if 'user_credentials' not in session:
         return jsonify({'authenticated': False})
     
@@ -356,7 +359,12 @@ def get_test_videos(sort_by, sort_direction, force_refresh):
 @app.route('/api/videos')
 def get_videos():
     """Get videos with metrics"""
+    print(f"🔍 DEBUG: Session keys: {list(session.keys())}")
+    print(f"🔍 DEBUG: Has user_credentials: {'user_credentials' in session}")
+    print(f"🔍 DEBUG: Session content: {dict(session)}")
+    
     if 'user_credentials' not in session:
+        print(f"❌ No user_credentials in session!")
         return jsonify({'authenticated': False})
     
     try:
@@ -458,7 +466,7 @@ def get_videos():
                 part='snippet',
                 forMine=True,
                 type='video',
-                maxResults=75,
+                maxResults=100,  # Set to 100 videos maximum
                 order='date'
             )
             
@@ -484,9 +492,16 @@ def get_videos():
                            if video.get('status', {}).get('privacyStatus') == 'public']
             
             if not public_videos:
-                return jsonify({'videos': [], 'error': 'No public videos found'})
+                return jsonify({
+                    'authenticated': True,
+                    'videos': [], 
+                    'error': 'No public videos found',
+                    'last_updated': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                    'total_videos_fetched': 0,
+                    'total_videos_available': 0
+                })
             
-            # Get video IDs for analytics
+            # Get video IDs for analytics (public videos only)
             video_ids = [video['id'] for video in public_videos]
             total_videos_fetched = len(video_ids)
             
@@ -503,10 +518,10 @@ def get_videos():
         print(f"🔄 Fetching metrics for all {total_videos_fetched} videos using Groups API...")
         all_metrics = get_video_metrics_with_groups(youtube_analytics, video_ids)
         
-        # If Groups API fails, fallback to individual calls
+        # If Groups API fails, return error instead of falling back
         if not all_metrics:
-            print("🔄 Groups API failed, falling back to individual calls...")
-            all_metrics = get_video_metrics_fallback(youtube_analytics, video_ids)
+            print("❌ Groups API failed - no fallback to save API quota")
+            return jsonify({'error': 'Analytics API failed. Please try again later.'}), 500
         
         # Process videos with the fetched metrics
         videos_with_metrics = []
@@ -644,26 +659,34 @@ def get_video_metrics(youtube_analytics, video_id):
         }
 
 def get_video_metrics_with_groups(youtube_analytics, video_ids):
-    """Get metrics for multiple videos using YouTube Analytics Groups API"""
+    """Get analytics metrics for multiple videos using efficient batch query"""
     try:
-        print(f"🔄 Fetching metrics for {len(video_ids)} videos using Groups API...")
+        print(f"🔄 Using efficient batch query for {len(video_ids)} videos...")
         
-        # Create a group query for all videos
+        # Check if filter string would be too long (YouTube video IDs are 11 chars each)
+        filter_string = f'video=={",".join(video_ids)}'
+        if len(filter_string) > 1500:  # Conservative limit to avoid API issues
+            print(f"⚠️ Filter string too long ({len(filter_string)} chars), limiting to first 100 videos")
+            video_ids = video_ids[:100]  # Limit to first 100 videos
+            filter_string = f'video=={",".join(video_ids)}'
+        
+        # Use the working approach that was already efficient
+        # This uses a single API call with video filters
         group_query = {
             'ids': 'channel==MINE',
             'startDate': '2024-01-01',
             'endDate': datetime.now().strftime('%Y-%m-%d'),
             'metrics': 'views,likes,averageViewDuration,averageViewPercentage,subscribersGained',
             'dimensions': 'video',
-            'filters': f'video=={",".join(video_ids)}',
+            'filters': filter_string,
             'sort': '-views'
         }
         
-        # Execute the group query
+        # Execute the query
         response = youtube_analytics.reports().query(**group_query).execute()
         
         if not response.get('rows'):
-            print("❌ No data returned from Groups API")
+            print("❌ No data returned from batch query")
             return {}
         
         # Convert response to video_id -> metrics mapping
@@ -678,12 +701,15 @@ def get_video_metrics_with_groups(youtube_analytics, video_ids):
                 'subscribersGained': row[5]
             }
         
-        print(f"✅ Groups API returned metrics for {len(metrics_by_video)} videos")
+        print(f"✅ Batch query returned metrics for {len(metrics_by_video)} videos")
         return metrics_by_video
         
     except Exception as e:
-        print(f"❌ Groups API error: {e}")
+        print(f"❌ Batch query error: {e}")
         return {}
+
+# Note: Groups API implementation removed due to API issues
+# Using efficient batch query approach instead
 
 def get_video_metrics_fallback(youtube_analytics, video_ids):
     """Fallback to individual API calls if Groups API fails"""
@@ -738,6 +764,28 @@ def clear_cache():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/clear-session')
+def clear_session():
+    """Clear user session data"""
+    try:
+        # Clear all session data
+        session.clear()
+        print("🗑️ Cleared all session data")
+        return jsonify({'message': 'Session cleared successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/logout')
+def logout():
+    """Logout user and clear session"""
+    try:
+        # Clear all session data
+        session.clear()
+        print("🚪 User logged out, session cleared")
+        return jsonify({'message': 'Logged out successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.errorhandler(Exception)
 def handle_exception(e):
     """Global error handler"""
@@ -747,4 +795,4 @@ def handle_exception(e):
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5000, use_reloader=False) 
+    app.run(debug=True, port=5000, use_reloader=True) 
