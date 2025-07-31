@@ -118,7 +118,8 @@ def authenticate():
                 client_config = json.load(f)
         
         # Determine if we're in production
-        is_production = request.host_url.startswith('https://')
+        # For testing: you can force production mode by setting FORCE_PRODUCTION=1
+        is_production = request.host_url.startswith('https://') or os.environ.get('FORCE_PRODUCTION') == '1'
         
         if is_production:
             # Production: Use web-based OAuth flow
