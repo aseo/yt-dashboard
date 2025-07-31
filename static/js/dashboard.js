@@ -8,6 +8,16 @@ function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
 }
 
+// Format date from ISO string
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+        year: 'numeric', 
+        month: 'short', 
+        day: 'numeric' 
+    });
+}
+
 // Format duration from seconds
 function formatDuration(seconds) {
     const minutes = Math.floor(seconds / 60);
@@ -17,7 +27,9 @@ function formatDuration(seconds) {
 
 // Get watch percentage color based on video length
 function getWatchPercentageColor(watchPercent, videoLength) {
-    const lengthInSeconds = parseInt(videoLength);
+    // Parse video length from "MM:SS" format
+    const parts = videoLength.split(':');
+    const lengthInSeconds = parseInt(parts[0]) * 60 + parseInt(parts[1]);
     
     // Define benchmarks based on video length
     let goodRange, excellentRange;
@@ -57,8 +69,8 @@ async function loadChannelInfo() {
         
         const channelInfo = document.getElementById('channel-info');
         
-        if (response.ok && !data.error) {
-            // Success - show channel info
+        if (data.authenticated) {
+            // User is authenticated - show channel info
             channelInfo.innerHTML = `
                 <div class="flex items-center space-x-2">
                     <img class="w-8 h-8 rounded-full" src="${data.thumbnail}" alt="${data.title}">
@@ -69,33 +81,24 @@ async function loadChannelInfo() {
                 </div>
             `;
         } else {
-            // Error or authentication required - show sign-in button
+            // User is not authenticated - show sign in button
             channelInfo.innerHTML = `
-                <div class="flex items-center space-x-2">
-                    <div class="text-sm opacity-75">${data.title || 'YouTube Dashboard'}</div>
-                    <button onclick="signIn()" class="px-3 py-1 text-xs bg-white bg-opacity-20 rounded hover:bg-opacity-30 transition-colors">
-                        Sign In
-                    </button>
-                </div>
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center">
+                    <i class="fas fa-sign-in-alt mr-1"></i>
+                    Sign In
+                </a>
             `;
         }
     } catch (error) {
         console.error('Error loading channel info:', error);
         const channelInfo = document.getElementById('channel-info');
         channelInfo.innerHTML = `
-            <div class="flex items-center space-x-2">
-                <div class="text-sm opacity-75">YouTube Dashboard</div>
-                <button onclick="signIn()" class="px-3 py-1 text-xs bg-white bg-opacity-20 rounded hover:bg-opacity-30 transition-colors">
-                    Sign In
-                </button>
+            <div class="text-red-300 text-sm">
+                <i class="fas fa-exclamation-triangle mr-1"></i>
+                Connection error
             </div>
         `;
     }
-}
-
-// Sign in function (placeholder for now)
-function signIn() {
-    alert('Sign-in feature coming soon! For now, this dashboard is configured for a single user.');
 }
 
 // Refresh data function
@@ -152,34 +155,61 @@ async function loadVideos(forceRefresh = false) {
         const response = await fetch(url);
         const data = await response.json();
         
-        // Handle new data structure with last_updated and video counts
-        if (data.videos && data.last_updated) {
-            videosData = data.videos;
-            totalVideosFetched = data.total_videos_fetched || data.videos.length;
-            totalVideosAvailable = data.total_videos_available || data.videos.length;
-            
-            // Update the last updated timestamp in the header
-            document.getElementById('last-updated').textContent = `Last Updated: ${data.last_updated}`;
-            
-            // Update video count indicator
-            updateVideoCount();
-            
-            // Show cache status if available
-            if (data.cached) {
-                console.log('📦 Loaded from cache - fast response!');
+        if (data.authenticated) {
+            // User is authenticated - handle video data
+            if (data.videos && data.last_updated) {
+                videosData = data.videos;
+                totalVideosFetched = data.total_videos_fetched || data.videos.length;
+                totalVideosAvailable = data.total_videos_available || data.videos.length;
+                
+                // Update the last updated timestamp in the header
+                document.getElementById('last-updated').textContent = `Last Updated: ${data.last_updated}`;
+                
+                // Update video count indicator
+                updateVideoCount();
+                
+                // Show cache status if available
+                if (data.cached) {
+                    console.log('📦 Loaded from cache - fast response!');
+                } else {
+                    console.log('🔄 Fresh data loaded from YouTube APIs');
+                }
             } else {
-                console.log('🔄 Fresh data loaded from YouTube APIs');
+                // Fallback for old data structure
+                videosData = data;
+                totalVideosFetched = data.length;
+                totalVideosAvailable = data.length;
             }
+            
+            updateTable();
         } else {
-            // Fallback for old data structure
-            videosData = data;
-            totalVideosFetched = data.length;
-            totalVideosAvailable = data.length;
+            // User is not authenticated - show sign in placeholder
+            document.getElementById('videos-table').innerHTML = `
+                <tr>
+                    <td colspan="8" class="px-6 py-12 text-center">
+                        <div class="flex flex-col items-center space-y-6">
+                            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-chart-line text-blue-600 text-2xl"></i>
+                            </div>
+                            <div class="text-center">
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Sign in to view your YouTube analytics</h3>
+                                <p class="text-gray-500 mb-6">Connect your Google account to see detailed metrics for your videos</p>
+                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                                    <i class="fab fa-google mr-2"></i>
+                                    Sign in with Google
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            
+            // Update video count to show sign in message
+            updateVideoCount();
         }
-        
-        updateTable();
     } catch (error) {
         console.error('Error loading videos:', error);
+        
         document.getElementById('videos-table').innerHTML = `
             <tr>
                 <td colspan="8" class="px-6 py-4 text-center text-red-500">
@@ -194,7 +224,11 @@ async function loadVideos(forceRefresh = false) {
 function updateVideoCount() {
     const countElement = document.getElementById('video-count');
     if (countElement) {
-        if (totalVideosAvailable > totalVideosFetched) {
+        if (totalVideosFetched === 0 && totalVideosAvailable === 0) {
+            // User is not authenticated
+            countElement.textContent = 'Sign in to view your videos';
+            countElement.className = 'text-sm text-gray-500';
+        } else if (totalVideosAvailable > totalVideosFetched) {
             countElement.textContent = `Showing ${totalVideosFetched} of ${totalVideosAvailable} videos`;
             countElement.className = 'text-sm text-gray-600';
         } else {
@@ -215,8 +249,8 @@ function sortVideos(column, direction) {
                 bVal = b.title.toLowerCase();
                 break;
             case 'published':
-                aVal = new Date(a.published);
-                bVal = new Date(b.published);
+                aVal = new Date(a.publishedAt);
+                bVal = new Date(b.publishedAt);
                 break;
             case 'views':
                 aVal = a.views;
@@ -227,20 +261,20 @@ function sortVideos(column, direction) {
                 bVal = b.likes;
                 break;
             case 'length':
-                aVal = parseInt(a.video_length);
-                bVal = parseInt(b.video_length);
+                aVal = parseInt(a.length.split(':')[0]) * 60 + parseInt(a.length.split(':')[1]);
+                bVal = parseInt(b.length.split(':')[0]) * 60 + parseInt(b.length.split(':')[1]);
                 break;
             case 'watchTime':
-                aVal = a.avg_duration;
-                bVal = b.avg_duration;
+                aVal = parseInt(a.watchTime.split(':')[0]) * 60 + parseInt(a.watchTime.split(':')[1]);
+                bVal = parseInt(b.watchTime.split(':')[0]) * 60 + parseInt(b.watchTime.split(':')[1]);
                 break;
             case 'watched':
-                aVal = a.avg_view_percent;
-                bVal = b.avg_view_percent;
+                aVal = a.percentWatched;
+                bVal = b.percentWatched;
                 break;
             case 'subs':
-                aVal = a.subs_gained;
-                bVal = b.subs_gained;
+                aVal = a.subsGained;
+                bVal = b.subsGained;
                 break;
             default:
                 return 0;
@@ -313,13 +347,13 @@ function updateTable() {
                     </div>
                 </div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.published}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatDate(video.publishedAt)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.views)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.likes)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.video_length}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatDuration(video.avg_duration)}</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm ${getWatchPercentageColor(video.avg_view_percent, video.video_length)}">${video.avg_view_percent.toFixed(1)}%</td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.subs_gained)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.length}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.watchTime}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm ${getWatchPercentageColor(video.percentWatched, video.length)}">${video.percentWatched}%</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.subsGained)}</td>
         </tr>
     `).join('');
 }

@@ -1,13 +1,42 @@
-from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
-from datetime import datetime, timedelta
+from googleapiclient.errors import HttpError
 import os
 import json
+import pickle
+import glob
 import isodate
+from datetime import datetime, timedelta
+import config
 from config import config
+
+def clear_old_cache_files():
+    """Clear all old cache files to prevent structure mismatches"""
+    try:
+        cache_files = glob.glob("videos_cache_*.json")
+        for cache_file in cache_files:
+            try:
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+                
+                # Check if cache has the correct structure
+                videos = cached_data.get('videos', [])
+                if videos and len(videos) > 0:
+                    first_video = videos[0]
+                    required_fields = ['percentWatched', 'watchTime', 'subsGained', 'publishedAt', 'length']
+                    if not all(field in first_video for field in required_fields):
+                        print(f"🗑️ Removing old cache file with invalid structure: {cache_file}")
+                        os.remove(cache_file)
+            except Exception as e:
+                print(f"🗑️ Removing corrupted cache file: {cache_file}")
+                os.remove(cache_file)
+    except Exception as e:
+        print(f"❌ Error clearing old cache files: {e}")
+
+# Clear old cache files on app startup
+clear_old_cache_files()
 
 app = Flask(__name__)
 app.config.from_object(config[os.environ.get('FLASK_ENV', 'development')])
@@ -15,741 +44,477 @@ app.config.from_object(config[os.environ.get('FLASK_ENV', 'development')])
 # Enable sessions for user authentication
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
+# Set session to last 24 hours
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+
 SCOPES = [
-    "https://www.googleapis.com/auth/youtube.readonly",
-    "https://www.googleapis.com/auth/yt-analytics.readonly",
-    "https://www.googleapis.com/auth/youtube"  # Required for Groups management
+    'https://www.googleapis.com/auth/youtube.readonly',
+    'https://www.googleapis.com/auth/yt-analytics.readonly',
+    'https://www.googleapis.com/auth/youtube'
 ]
 
-def authenticate():
-    """Authenticate with Google OAuth (development only)."""
-    if os.environ.get('FLASK_ENV') == 'production':
-        print("OAuth flow not available in production")
-        return None
-    
-    flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
-    creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
-    return creds
-
 def get_credentials():
-    """Get valid user credentials from storage or environment variables with robust error handling."""
-    creds = None
-    
-    # Check if we have credentials in environment variables (production)
-    if os.environ.get('GOOGLE_CREDENTIALS'):
+    """Get user credentials from session or start OAuth flow"""
+    # Check if user has valid credentials in session
+    if 'user_credentials' in session:
         try:
-            creds_data = json.loads(os.environ.get('GOOGLE_CREDENTIALS'))
-            creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
-            print("✅ Loaded credentials from environment variables")
-        except Exception as e:
-            print(f"❌ Error loading credentials from environment: {e}")
-            return None
-    
-    # Fallback to local files (development)
-    if not creds and os.path.exists("token.json"):
-        try:
-            with open("token.json", "r") as token_file:
-                creds_data = json.load(token_file)
+            # Reconstruct credentials from session data
+            from google.oauth2.credentials import Credentials
+            creds_data = session['user_credentials']
+            creds = Credentials(
+                token=creds_data['token'],
+                refresh_token=creds_data['refresh_token'],
+                token_uri=creds_data['token_uri'],
+                client_id=creds_data['client_id'],
+                client_secret=creds_data['client_secret'],
+                scopes=creds_data['scopes']
+            )
             
-            # Validate that the token has required fields
-            if 'refresh_token' not in creds_data:
-                print("❌ Token file missing refresh_token - will re-authenticate")
-                os.remove("token.json")
-                return None
-                
-            creds = Credentials.from_authorized_user_info(creds_data, SCOPES)
-            print("✅ Loaded credentials from token.json")
-        except Exception as e:
-            print(f"❌ Error loading credentials from file: {e}")
-            # Delete corrupted token file and start fresh
-            try:
-                os.remove("token.json")
-                print("🗑️ Deleted corrupted token.json file")
-            except:
-                pass
-            return None
-    
-    # If there are no (valid) credentials available, let the user log in.
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            try:
+            # Check if credentials are still valid
+            if creds and creds.valid:
+                print("✅ Loaded credentials from session")
+                print("✅ Credentials are valid and ready to use")
+                return creds
+            
+            # Refresh if expired
+            if creds and creds.expired and creds.refresh_token:
                 print("🔄 Refreshing expired credentials...")
                 creds.refresh(Request())
-                print("✅ Successfully refreshed credentials")
                 
-                # Save refreshed credentials
-                if os.environ.get('FLASK_ENV') != 'production':
-                    with open("token.json", "w") as token:
-                        token.write(creds.to_json())
-                    print("💾 Saved refreshed credentials to token.json")
-                    
-            except Exception as e:
-                print(f"❌ Error refreshing credentials: {e}")
-                # Delete the corrupted token and start fresh
-                try:
-                    os.remove("token.json")
-                    print("🗑️ Deleted corrupted token.json after refresh failure")
-                except:
-                    pass
-                return None
-        else:
-            # For production, we need to handle OAuth flow differently
-            if os.environ.get('FLASK_ENV') == 'production':
-                print("❌ Production environment requires valid credentials")
-                return None
-            else:
-                # Development OAuth flow
-                print("🔐 Starting OAuth flow for new authentication...")
-                try:
-                    flow = InstalledAppFlow.from_client_secrets_file("client_secret.json", SCOPES)
-                    creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
-                    print("✅ OAuth authentication successful")
-                    
-                    # Save the credentials for the next run (development only)
-                    with open("token.json", "w") as token:
-                        token.write(creds.to_json())
-                    print("💾 Saved new credentials to token.json")
-                    
-                except Exception as e:
-                    print(f"❌ OAuth authentication failed: {e}")
-                    return None
-    
-    # Final validation
-    if not creds or not creds.valid:
-        print("❌ Final credential validation failed")
-        return None
-    
-    print("✅ Credentials are valid and ready to use")
-    return creds
-
-def get_cache_key():
-    """Generate a cache key for current 6-hour period"""
-    now = datetime.now()
-    # 6-hour periods: 00-05, 06-11, 12-17, 18-23
-    period = now.hour // 6
-    period_names = ["night", "morning", "afternoon", "evening"]
-    date = now.strftime("%Y-%m-%d")
-    return f"videos_cache_{date}_{period_names[period]}.json"
-
-def is_cache_valid(cache_file, max_age_hours=6):
-    """Check if cache file is still valid (default 6 hours)"""
-    if not os.path.exists(cache_file):
-        return False
-    
-    # Check if file is within the max age
-    file_time = datetime.fromtimestamp(os.path.getmtime(cache_file))
-    now = datetime.now()
-    age_hours = (now - file_time).total_seconds() / 3600
-    
-    return age_hours < max_age_hours
-
-def load_from_cache(cache_file):
-    """Load data from cache file"""
-    try:
-        with open(cache_file, 'r') as f:
-            return json.load(f)
-    except:
-        return None
-
-def save_to_cache(cache_file, data):
-    """Save data to cache file"""
-    try:
-        with open(cache_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        print(f"Saved cache: {cache_file}")
-    except Exception as e:
-        print(f"Error saving cache: {e}")
-
-def clear_old_cache():
-    """Remove cache files older than 24 hours"""
-    cache_dir = "."
-    
-    for file in os.listdir(cache_dir):
-        if file.startswith("videos_cache_") and file.endswith(".json"):
-            file_path = os.path.join(cache_dir, file)
-            
-            if not is_cache_valid(file_path, max_age_hours=24):
-                try:
-                    os.remove(file_path)
-                    print(f"Removed old cache: {file}")
-                except:
-                    pass
-
-
-
-def get_video_metrics(video_id, youtube_analytics, youtube_data):
-    """Get metrics for a single video (fallback for small batches)"""
-    try:
-        # Get video duration using Data API
-        video_req = youtube_data.videos().list(
-            part="snippet,contentDetails,statistics,status",
-            id=video_id
-        )
-        video_res = video_req.execute()
-        if not video_res.get("items"):
-            return None
-        video_item = video_res["items"][0]
-
-        duration_iso = video_item["contentDetails"]["duration"]
-        duration_sec = isodate.parse_duration(duration_iso).total_seconds()
-        
-        # Format duration as MM:SS or M:SS
-        minutes = int(duration_sec // 60)
-        seconds = int(duration_sec % 60)
-        video_length = f"{minutes}:{seconds:02d}"
-
-        published_at = video_item["snippet"]["publishedAt"]
-        published_date = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d")
-
-        # Get channel ID from the video's channel
-        channel_id = video_item["snippet"]["channelId"]
-
-        # Get analytics data
-        today = datetime.today().strftime('%Y-%m-%d')
-        
-        analytics_req = youtube_analytics.reports().query(
-            ids=f"channel=={channel_id}",
-            startDate="2024-01-01",
-            endDate=today,
-            metrics="views,likes,averageViewDuration,averageViewPercentage,subscribersGained",
-            dimensions="video",
-            filters=f"video=={video_id}"
-        )
-        analytics_res = analytics_req.execute()
-
-        rows = analytics_res.get("rows", [])
-        if not rows:
-            # Fallback to basic stats from Data API
-            stats = video_item.get("statistics", {})
-            return {
-                "published": published_date,
-                "video_length": video_length,
-                "views": int(stats.get("viewCount", 0)),
-                "likes": int(stats.get("likeCount", 0)),
-                "avg_duration": 0,
-                "avg_view_percent": 0,
-                "subs_gained": 0,
-                "title": video_item["snippet"]["title"],
-                "thumbnail": video_item["snippet"]["thumbnails"]["medium"]["url"],
-                "status": video_item.get("status", {}).get("privacyStatus", "unknown")
-            }
-        
-        row = rows[0]
-        return {
-            "published": published_date,
-            "video_length": video_length,
-            "views": int(row[1]),
-            "likes": int(row[2]),
-            "avg_duration": float(row[3]),
-            "avg_view_percent": float(row[4]),
-            "subs_gained": int(row[5]),
-            "title": video_item["snippet"]["title"],
-            "thumbnail": video_item["snippet"]["thumbnails"]["medium"]["url"],
-            "status": video_item.get("status", {}).get("privacyStatus", "unknown")
-        }
-    except Exception as e:
-        print(f"Error getting metrics for {video_id}: {e}")
-        return None
-
-def get_or_create_video_group(youtube_analytics, video_ids):
-    """Get existing group or create new one with current videos"""
-    try:
-        # Check if we have an existing group
-        existing_groups = youtube_analytics.groups().list().execute()
-        
-        if existing_groups.get("items"):
-            group = existing_groups["items"][0]  # Use first group
-            print(f"Using existing group: {group['snippet']['title']}")
-            
-            # Update group with current video list
-            update_group_items(group["id"], video_ids, youtube_analytics)
-            
-            return group["id"]
-        else:
-            # Create new group
-            print("Creating new video analytics group...")
-            return create_new_group(video_ids, youtube_analytics)
-            
-    except Exception as e:
-        print(f"Error managing video group: {e}")
-        return None
-
-def create_new_group(video_ids, youtube_analytics):
-    """Create a new group and add videos to it"""
-    try:
-        # Create the group
-        group = youtube_analytics.groups().insert(
-            body={
-                "snippet": {
-                    "title": "YT Dashboard Videos"
-                },
-                "contentDetails": {
-                    "itemType": "youtube#video"
+                # Update session with new token
+                session['user_credentials'] = {
+                    'token': creds.token,
+                    'refresh_token': creds.refresh_token,
+                    'token_uri': creds.token_uri,
+                    'client_id': creds.client_id,
+                    'client_secret': creds.client_secret,
+                    'scopes': creds.scopes
                 }
-            }
-        ).execute()
-        
-        group_id = group["id"]
-        print(f"Created new group: {group_id}")
-        
-        # Add videos to the group
-        add_videos_to_group(group_id, video_ids, youtube_analytics)
-        
-        return group_id
-        
-    except Exception as e:
-        print(f"Error creating group: {e}")
-        return None
-
-def update_group_items(group_id, current_video_ids, youtube_analytics):
-    """Update group to match current video list"""
-    try:
-        # Get current items in group
-        current_items = youtube_analytics.groupItems().list(
-            groupId=group_id
-        ).execute()
-        
-        current_group_videos = set()
-        if current_items.get("items"):
-            current_group_videos = {item["resource"]["id"] for item in current_items["items"]}
-        
-        current_video_set = set(current_video_ids)
-        
-        # Find videos to add and remove
-        videos_to_add = current_video_set - current_group_videos
-        videos_to_remove = current_group_videos - current_video_set
-        
-        # Remove videos that are no longer needed
-        for video_id in videos_to_remove:
-            try:
-                youtube_analytics.groupItems().delete(
-                    groupId=group_id,
-                    id=video_id
-                ).execute()
-                print(f"Removed video {video_id} from group")
-            except Exception as e:
-                print(f"Error removing video {video_id}: {e}")
-        
-        # Add new videos
-        add_videos_to_group(group_id, list(videos_to_add), youtube_analytics)
-        
-        if videos_to_add or videos_to_remove:
-            print(f"Updated group: +{len(videos_to_add)} videos, -{len(videos_to_remove)} videos")
-        else:
-            print("Group is up to date")
-            
-    except Exception as e:
-        print(f"Error updating group items: {e}")
-
-def add_videos_to_group(group_id, video_ids, youtube_analytics):
-    """Add videos to an existing group"""
-    if not video_ids:
-        return
-        
-    for video_id in video_ids:
-        try:
-            youtube_analytics.groupItems().insert(
-                groupId=group_id,
-                body={
-                    "resource": {
-                        "id": video_id,
-                        "kind": "youtube#video"
-                    }
-                }
-            ).execute()
-            print(f"Added video {video_id} to group")
+                session.modified = True
+                print("✅ Credentials refreshed and updated in session")
+                return creds
+                
         except Exception as e:
-            print(f"Error adding video {video_id} to group: {e}")
+            print(f"❌ Error loading credentials from session: {e}")
+            # Clear invalid session data
+            session.pop('user_credentials', None)
+    
+    # No valid credentials in session - start OAuth flow
+    print("🔐 No valid credentials in session - starting OAuth flow")
+    return None
 
-def get_group_analytics(group_id, youtube_analytics, youtube_data):
-    """Get analytics data for all videos in a group"""
+def authenticate():
+    """Start OAuth flow and store credentials in session"""
     try:
-        today = datetime.today().strftime('%Y-%m-%d')
+        # Load client secrets
+        client_secrets_file = os.environ.get('GOOGLE_CREDENTIALS', 'client_secret.json')
         
-        # Query analytics for the entire group
-        analytics_req = youtube_analytics.reports().query(
-            ids=f"group=={group_id}",
-            startDate="2024-01-01",
-            endDate=today,
-            metrics="views,likes,averageViewDuration,averageViewPercentage,subscribersGained",
-            dimensions="video"
+        if os.environ.get('GOOGLE_CREDENTIALS'):
+            # Parse JSON from environment variable
+            client_config = json.loads(os.environ.get('GOOGLE_CREDENTIALS'))
+        else:
+            # Load from file
+            with open(client_secrets_file, 'r') as f:
+                client_config = json.load(f)
+        
+        # Create OAuth flow
+        flow = InstalledAppFlow.from_client_config(
+            client_config,
+            scopes=SCOPES,
+            redirect_uri='http://localhost:8080/'
         )
-        analytics_res = analytics_req.execute()
         
-        # Create a map of video_id to analytics data
-        analytics_map = {}
-        for row in analytics_res.get("rows", []):
-            video_id = row[0]
-            analytics_map[video_id] = {
-                "views": int(row[1]),
-                "likes": int(row[2]),
-                "avg_duration": float(row[3]),
-                "avg_view_percent": float(row[4]),
-                "subs_gained": int(row[5])
-            }
+        # Run OAuth flow
+        print("🔐 Starting OAuth flow...")
+        try:
+            creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+        except OSError as e:
+            if "Address already in use" in str(e):
+                print("🔄 Port 8080 busy, trying port 8081...")
+                creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
+            else:
+                raise e
         
-        # Get video details from Data API
-        video_ids = list(analytics_map.keys())
-        if not video_ids:
-            return []
-            
-        video_ids_str = ','.join(video_ids)
-        video_req = youtube_data.videos().list(
-            part="snippet,contentDetails,statistics,status",
-            id=video_ids_str
-        )
-        video_res = video_req.execute()
-        video_items = video_res.get("items", [])
+        # Store credentials in session
+        session['user_credentials'] = {
+            'token': creds.token,
+            'refresh_token': creds.refresh_token,
+            'token_uri': creds.token_uri,
+            'client_id': creds.client_id,
+            'client_secret': creds.client_secret,
+            'scopes': creds.scopes
+        }
+        session.modified = True
         
-        # Combine analytics and video data
-        results = []
-        for video_item in video_items:
-            video_id = video_item["id"]
-            analytics = analytics_map.get(video_id)
-            
-            if not analytics:
-                continue
-                
-            # Format duration
-            duration_iso = video_item["contentDetails"]["duration"]
-            duration_sec = isodate.parse_duration(duration_iso).total_seconds()
-            minutes = int(duration_sec // 60)
-            seconds = int(duration_sec % 60)
-            video_length = f"{minutes}:{seconds:02d}"
-            
-            # Format published date
-            published_at = video_item["snippet"]["publishedAt"]
-            published_date = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d")
-            
-            result = {
-                "published": published_date,
-                "video_length": video_length,
-                "views": analytics["views"],
-                "likes": analytics["likes"],
-                "avg_duration": analytics["avg_duration"],
-                "avg_view_percent": analytics["avg_view_percent"],
-                "subs_gained": analytics["subs_gained"],
-                "title": video_item["snippet"]["title"],
-                "thumbnail": video_item["snippet"]["thumbnails"]["medium"]["url"],
-                "status": video_item.get("status", {}).get("privacyStatus", "unknown")
-            }
-            
-            results.append(result)
-        
-        return results
+        print("✅ OAuth completed - credentials stored in session")
+        return creds
         
     except Exception as e:
-        print(f"Error getting group analytics: {e}")
-        return []
+        print(f"❌ OAuth error: {e}")
+        return None
 
 @app.route('/')
-def dashboard():
-    # Check if user is authenticated
-    if 'user_authenticated' not in session:
-        return redirect(url_for('login'))
+def index():
+    """Main dashboard page"""
     return app.send_static_file('dashboard.html')
 
 @app.route('/login')
 def login():
-    if 'user_authenticated' in session:
-        return redirect(url_for('dashboard'))
-    return app.send_static_file('login.html')
+    """Login page"""
+    if 'user_credentials' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
 
 @app.route('/auth/google')
 def google_auth():
-    """Handle Google OAuth authentication"""
-    if os.environ.get('FLASK_ENV') == 'production':
-        # In production, you'd implement proper OAuth flow
-        # For now, we'll use a simple approach
-        session['user_authenticated'] = True
-        session['user_email'] = 'user@example.com'  # You'd get this from OAuth
-        return redirect(url_for('dashboard'))
-    else:
-        # Development: use the existing OAuth flow
-        try:
-            creds = authenticate()
-            if creds:
-                session['user_authenticated'] = True
-                session['user_email'] = 'dev-user@example.com'
-                return redirect(url_for('dashboard'))
-            else:
-                return "Authentication failed", 401
-        except Exception as e:
-            return f"Authentication error: {e}", 500
+    """Handle Google OAuth"""
+    try:
+        creds = authenticate()
+        if creds:
+            return redirect(url_for('index'))
+        else:
+            flash('Authentication failed. Please try again.', 'error')
+            return redirect(url_for('login'))
+    except Exception as e:
+        print(f"❌ Authentication error: {e}")
+        flash('Authentication error. Please try again.', 'error')
+        return redirect(url_for('login'))
 
 @app.route('/logout')
 def logout():
+    """Logout user by clearing session"""
     session.clear()
+    flash('You have been logged out successfully.', 'success')
     return redirect(url_for('login'))
+
+@app.route('/favicon.ico')
+def favicon():
+    """Handle favicon requests"""
+    return '', 204
+
+@app.route('/privacy')
+def privacy():
+    """Serve privacy policy page"""
+    return app.send_static_file('privacy.html')
+
+@app.errorhandler(404)
+def not_found(e):
+    """Handle 404 errors"""
+    if request.path == '/favicon.ico':
+        return '', 204
+    return jsonify({'error': 'Not found'}), 404
+
+@app.route('/api/channel')
+def get_channel():
+    """Get channel information"""
+    if 'user_credentials' not in session:
+        return jsonify({'authenticated': False})
+    
+    try:
+        creds = get_credentials()
+        if not creds:
+            return jsonify({'authenticated': False})
+        
+        youtube = build('youtube', 'v3', credentials=creds)
+        
+        # Get channel info
+        channels_response = youtube.channels().list(
+            part='snippet,statistics',
+            mine=True
+        ).execute()
+        
+        if channels_response['items']:
+            channel = channels_response['items'][0]
+            return jsonify({
+                'authenticated': True,
+                'title': channel['snippet']['title'],
+                'thumbnail': channel['snippet']['thumbnails']['default']['url'],
+                'subscriberCount': channel['statistics']['subscriberCount']
+            })
+        else:
+            return jsonify({'authenticated': True, 'error': 'No channel found'}), 404
+            
+    except Exception as e:
+        print(f"Channel API error: {e}")
+        return jsonify({'authenticated': False, 'error': str(e)})
 
 @app.route('/api/videos')
 def get_videos():
-    # Check if user is authenticated
-    if 'user_authenticated' not in session:
-        return jsonify({"error": "Authentication required"}), 401
+    """Get videos with metrics"""
+    if 'user_credentials' not in session:
+        return jsonify({'authenticated': False})
+    
     try:
-        # Get credentials first with better error handling
-        try:
-            creds = get_credentials()
-            if not creds:
-                print("❌ No credentials available - authentication required")
-                return jsonify({"error": "Authentication required. Please check your credentials."}), 401
-        except Exception as auth_error:
-            print(f"❌ Authentication error: {auth_error}")
-            return jsonify({"error": f"Authentication failed: {str(auth_error)}"}), 401
+        creds = get_credentials()
+        if not creds:
+            return jsonify({'authenticated': False})
         
-        # Get query parameters for pagination and sorting
-        page = int(request.args.get('page', 1))
-        per_page = int(request.args.get('per_page', 5))
+        # Get query parameters
         sort_by = request.args.get('sort_by', 'published')
         sort_direction = request.args.get('sort_direction', 'desc')
         force_refresh = request.args.get('refresh', 'false').lower() == 'true'
         
-        # Clear cache if force refresh is requested
+        # Check cache first (unless force refresh)
+        cache_file = f"videos_cache_{datetime.now().strftime('%Y-%m-%d')}_{'morning' if datetime.now().hour < 12 else 'afternoon'}.json"
+        
+        if not force_refresh and os.path.exists(cache_file):
+            try:
+                with open(cache_file, 'r') as f:
+                    cached_data = json.load(f)
+                
+                # Check if cache is still valid (6 hours)
+                cache_time = datetime.fromisoformat(cached_data.get('cache_time', '2000-01-01'))
+                if datetime.now() - cache_time < timedelta(hours=6):
+                    # Validate cache structure - check if it has the correct field names
+                    videos = cached_data.get('videos', [])
+                    if videos and len(videos) > 0:
+                        # Check if the first video has the correct field structure
+                        first_video = videos[0]
+                        required_fields = ['percentWatched', 'watchTime', 'subsGained', 'publishedAt', 'length']
+                        if all(field in first_video for field in required_fields):
+                            print(f"✅ Using cached data from {cache_file}")
+                            
+                            # Sort cached data
+                            videos = sort_videos(videos, sort_by, sort_direction)
+                            
+                            return jsonify({
+                                'authenticated': True,
+                                'videos': videos,
+                                'last_updated': cached_data.get('last_updated'),
+                                'total_videos_fetched': len(videos),
+                                'total_videos_available': cached_data.get('total_videos_available', len(videos))
+                            })
+                        else:
+                            print(f"❌ Cache has invalid structure - missing required fields")
+                            # Remove invalid cache file
+                            os.remove(cache_file)
+                    else:
+                        print(f"❌ Cache is empty")
+                        # Remove empty cache file
+                        os.remove(cache_file)
+            except Exception as e:
+                print(f"❌ Cache error: {e}")
+                # Remove corrupted cache file
+                if os.path.exists(cache_file):
+                    os.remove(cache_file)
+        
         if force_refresh:
             print("🔄 Force refresh requested - clearing cache...")
-            clear_old_cache()
+            if os.path.exists(cache_file):
+                os.remove(cache_file)
         
-        # Check cache first (unless force refresh is requested)
-        cache_file = get_cache_key()
-        if not force_refresh and is_cache_valid(cache_file):
-            cached_data = load_from_cache(cache_file)
-            if cached_data:
-                # Sort cached data
-                all_videos = cached_data.get("videos", [])
-                reverse_sort = sort_direction == 'desc'
-                
-                if sort_by == 'title':
-                    all_videos.sort(key=lambda x: x['title'].lower(), reverse=reverse_sort)
-                elif sort_by == 'published':
-                    all_videos.sort(key=lambda x: x['published'], reverse=reverse_sort)
-                elif sort_by == 'views':
-                    all_videos.sort(key=lambda x: x['views'], reverse=reverse_sort)
-                elif sort_by == 'likes':
-                    all_videos.sort(key=lambda x: x['likes'], reverse=reverse_sort)
-                elif sort_by == 'length':
-                    all_videos.sort(key=lambda x: sum(int(t) * 60 ** i for i, t in enumerate(reversed(x['video_length'].split(':')))), reverse=reverse_sort)
-                elif sort_by == 'watchTime':
-                    all_videos.sort(key=lambda x: x['avg_duration'], reverse=reverse_sort)
-                elif sort_by == 'watched':
-                    all_videos.sort(key=lambda x: x['avg_view_percent'], reverse=reverse_sort)
-                elif sort_by == 'subs':
-                    all_videos.sort(key=lambda x: x['subs_gained'], reverse=reverse_sort)
-                
-                return jsonify({
-                    "videos": all_videos,
-                    "last_updated": cached_data.get("last_updated"),
-                    "cached": True,
-                    "total_videos_fetched": cached_data.get("total_videos_fetched", len(all_videos)),
-                    "total_videos_available": cached_data.get("total_videos_available", len(all_videos))
-                })
-        
-        # If no cache, fetch from YouTube APIs
         print("Fetching fresh data from YouTube APIs...")
-        try:
-            youtube = build("youtube", "v3", credentials=creds)
-            youtube_analytics = build("youtubeAnalytics", "v2", credentials=creds)
-        except Exception as build_error:
-            print(f"❌ Failed to build YouTube API clients: {build_error}")
-            return jsonify({"error": f"Failed to initialize YouTube APIs: {str(build_error)}"}), 500
-
-        # Get all video IDs (up to 50 videos)
-        try:
-            search_request = youtube.search().list(
-                part="snippet",
-                forMine=True,
-                type="video",
-                maxResults=50,  # Get up to 50 videos
-                order="date"
-            )
-            response = search_request.execute()
-        except Exception as search_error:
-            print(f"❌ Failed to search for videos: {search_error}")
-            return jsonify({"error": f"Failed to search for videos: {str(search_error)}"}), 500
+        
+        # Build YouTube API client
+        youtube = build('youtube', 'v3', credentials=creds)
+        youtube_analytics = build('youtubeAnalytics', 'v2', credentials=creds)
+        
+        # Get all videos
+        search_request = youtube.search().list(
+            part='snippet',
+            forMine=True,
+            type='video',
+            maxResults=50,
+            order='date'
+        )
+        
+        response = search_request.execute()
+        
+        if not response.get('items'):
+            return jsonify({'videos': [], 'error': 'No videos found'})
         
         # Get all video IDs
         all_video_items = response.get("items", [])
         video_ids = [item["id"]["videoId"] for item in all_video_items]
         total_videos_fetched = len(video_ids)
         
-        # Get total count for display purposes
-        try:
-            total_search_request = youtube.search().list(
-                part="snippet",
-                forMine=True,
-                type="video",
-                maxResults=1,  # Just get count
-                order="date"
-            )
-            total_response = total_search_request.execute()
-            total_videos_available = total_response.get("pageInfo", {}).get("totalResults", 0)
-        except Exception as total_error:
-            print(f"❌ Failed to get total video count: {total_error}")
-            total_videos_available = total_videos_fetched  # Fallback to fetched count
-        
         print(f"Fetching metrics for {total_videos_fetched} videos")
         
-        # Use individual calls with retry logic for network reliability
-        all_metrics = []
-        successful_calls = 0
+        # Get detailed video info
+        videos_request = youtube.videos().list(
+            part='snippet,contentDetails,statistics,status',
+            id=','.join(video_ids)
+        )
+        videos_response = videos_request.execute()
         
-        for i, video_id in enumerate(video_ids, 1):
+        # Get analytics data for each video
+        videos_with_metrics = []
+        for i, video in enumerate(videos_response.get('items', []), 1):
+            video_id = video['id']
             print(f"Processing video {i}/{total_videos_fetched}: {video_id}")
             
-            # Retry up to 3 times for each video
-            for attempt in range(3):
-                try:
-                    metrics = get_video_metrics(video_id, youtube_analytics, youtube)
-                    if metrics:
-                        all_metrics.append(metrics)
-                        successful_calls += 1
-                        print(f"  ✅ Success (attempt {attempt + 1})")
-                        break
-                    else:
-                        print(f"  ⚠️  No data for video {video_id}")
-                        break
-                except Exception as e:
-                    if attempt < 2:  # Not the last attempt
-                        print(f"  🔄 Retry {attempt + 1}/3: {e}")
-                        import time
-                        time.sleep(1)  # Wait 1 second before retry
-                    else:
-                        print(f"  ❌ Failed after 3 attempts: {e}")
+            try:
+                metrics = get_video_metrics(youtube_analytics, video_id)
+                
+                # Calculate video length
+                duration = isodate.parse_duration(video['contentDetails']['duration'])
+                video_length = f"{int(duration.total_seconds() // 60):02d}:{int(duration.total_seconds() % 60):02d}"
+                
+                # Calculate % watched
+                avg_view_duration = metrics.get('averageViewDuration', 0)
+                total_duration = duration.total_seconds()
+                percent_watched = (avg_view_duration / total_duration * 100) if total_duration > 0 else 0
+                
+                video_data = {
+                    'id': video_id,
+                    'title': video['snippet']['title'],
+                    'thumbnail': video['snippet']['thumbnails']['medium']['url'],
+                    'publishedAt': video['snippet']['publishedAt'],
+                    'views': metrics.get('views', 0),
+                    'likes': metrics.get('likes', 0),
+                    'length': video_length,
+                    'watchTime': f"{int(avg_view_duration // 60):02d}:{int(avg_view_duration % 60):02d}",
+                    'percentWatched': round(percent_watched, 1),
+                    'subsGained': metrics.get('subscribersGained', 0)
+                }
+                
+                videos_with_metrics.append(video_data)
+                print(f"  ✅ Success (attempt 1)")
+                
+            except Exception as e:
+                print(f"  ❌ Error processing video {video_id}: {e}")
+                continue
         
-        print(f"✅ Successfully processed {successful_calls}/{total_videos_fetched} videos")
-        all_videos = [metrics for metrics in all_metrics if metrics and metrics.get("status") == "public"]
-
-        # Sort all videos on server side
-        reverse_sort = sort_direction == 'desc'
+        print(f"✅ Successfully processed {len(videos_with_metrics)}/{total_videos_fetched} videos")
         
-        if sort_by == 'title':
-            all_videos.sort(key=lambda x: x['title'].lower(), reverse=reverse_sort)
-        elif sort_by == 'published':
-            all_videos.sort(key=lambda x: x['published'], reverse=reverse_sort)
-        elif sort_by == 'views':
-            all_videos.sort(key=lambda x: x['views'], reverse=reverse_sort)
-        elif sort_by == 'likes':
-            all_videos.sort(key=lambda x: x['likes'], reverse=reverse_sort)
-        elif sort_by == 'length':
-            all_videos.sort(key=lambda x: sum(int(t) * 60 ** i for i, t in enumerate(reversed(x['video_length'].split(':')))), reverse=reverse_sort)
-        elif sort_by == 'watchTime':
-            all_videos.sort(key=lambda x: x['avg_duration'], reverse=reverse_sort)
-        elif sort_by == 'watched':
-            all_videos.sort(key=lambda x: x['avg_view_percent'], reverse=reverse_sort)
-        elif sort_by == 'subs':
-            all_videos.sort(key=lambda x: x['subs_gained'], reverse=reverse_sort)
-
-        # No pagination - return all videos
-
-        # Add dashboard-level last updated timestamp (yesterday's date)
-        yesterday = datetime.now() - timedelta(days=1)
+        # Sort videos
+        videos_with_metrics = sort_videos(videos_with_metrics, sort_by, sort_direction)
         
-        # Cache all videos
-        dashboard_data = {
-            "videos": all_videos,  # Store all videos in cache
-            "last_updated": yesterday.strftime("%Y-%m-%d"),
-            "total_videos_fetched": total_videos_fetched,
-            "total_videos_available": total_videos_available
+        # Calculate last updated (yesterday's date)
+        last_updated = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        # Cache the results
+        cache_data = {
+            'videos': videos_with_metrics,
+            'last_updated': last_updated,
+            'total_videos_available': total_videos_fetched,
+            'cache_time': datetime.now().isoformat()
+        }
+        
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f, indent=2)
+        
+        print(f"Saved cache: {cache_file}")
+        
+        return jsonify({
+            'authenticated': True,
+            'videos': videos_with_metrics,
+            'last_updated': last_updated,
+            'total_videos_fetched': len(videos_with_metrics),
+            'total_videos_available': total_videos_fetched
+        })
+        
+    except Exception as e:
+        print(f"❌ Unhandled exception: {e}")
+        print(f"❌ Exception type: {type(e).__name__}")
+        print(f"❌ Traceback: {e}")
+        return jsonify({'error': str(e)}), 500
+
+def get_video_metrics(youtube_analytics, video_id):
+    """Get analytics metrics for a single video"""
+    try:
+        # Query YouTube Analytics API for views, likes, and average view duration
+        request = youtube_analytics.reports().query(
+            ids=f'channel==MINE',
+            startDate='2024-01-01',
+            endDate=datetime.now().strftime('%Y-%m-%d'),
+            metrics='views,likes,averageViewDuration',
+            dimensions='video',
+            filters=f'video=={video_id}'
+        )
+        
+        response = request.execute()
+        
+        # Initialize metrics
+        metrics = {
+            'views': 0,
+            'likes': 0,
+            'averageViewDuration': 0,
+            'subscribersGained': 0
+        }
+        
+        if response.get('rows'):
+            row = response['rows'][0]
+            metrics['views'] = row[1]
+            metrics['likes'] = row[2]
+            metrics['averageViewDuration'] = row[3]
+        
+        # Query for subscribers gained (separate query due to API limitations)
+        try:
+            subs_request = youtube_analytics.reports().query(
+                ids=f'channel==MINE',
+                startDate='2024-01-01',
+                endDate=datetime.now().strftime('%Y-%m-%d'),
+                metrics='subscribersGained',
+                dimensions='video',
+                filters=f'video=={video_id}'
+            )
+            
+            subs_response = subs_request.execute()
+            
+            if subs_response.get('rows'):
+                subs_row = subs_response['rows'][0]
+                metrics['subscribersGained'] = subs_row[1]
+                
+        except Exception as subs_error:
+            print(f"  ⚠️ Could not fetch subscribers gained for {video_id}: {subs_error}")
+            # Keep default value of 0
+        
+        return metrics
+            
+    except Exception as e:
+        print(f"  ❌ Analytics API error for {video_id}: {e}")
+        return {
+            'views': 0,
+            'likes': 0,
+            'averageViewDuration': 0,
+            'subscribersGained': 0
         }
 
-        # Save to cache
-        save_to_cache(cache_file, dashboard_data)
-        
-        # Clear old cache files
-        clear_old_cache()
-
-        return jsonify({
-            "videos": all_videos,
-            "last_updated": yesterday.strftime("%Y-%m-%d"),
-            "total_videos_fetched": total_videos_fetched,
-            "total_videos_available": total_videos_available
-        })
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+def sort_videos(videos, sort_by, sort_direction):
+    """Sort videos by specified field and direction"""
+    reverse = sort_direction == 'desc'
+    
+    if sort_by == 'published':
+        return sorted(videos, key=lambda x: x['publishedAt'], reverse=reverse)
+    elif sort_by == 'views':
+        return sorted(videos, key=lambda x: x['views'], reverse=reverse)
+    elif sort_by == 'likes':
+        return sorted(videos, key=lambda x: x['likes'], reverse=reverse)
+    elif sort_by == 'watched':
+        return sorted(videos, key=lambda x: x['percentWatched'], reverse=reverse)
+    elif sort_by == 'length':
+        return sorted(videos, key=lambda x: x['length'], reverse=reverse)
+    elif sort_by == 'watchTime':
+        return sorted(videos, key=lambda x: x['watchTime'], reverse=reverse)
+    elif sort_by == 'subsGained':
+        return sorted(videos, key=lambda x: x['subsGained'], reverse=reverse)
+    else:
+        return videos
 
 @app.route('/api/clear-cache')
 def clear_cache():
-    # Check if user is authenticated
-    if 'user_authenticated' not in session:
-        return jsonify({"error": "Authentication required"}), 401
     """Clear all cache files"""
+    if 'user_credentials' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+    
     try:
-        clear_old_cache()
-        return jsonify({"message": "Cache cleared successfully"}), 200
+        cache_files = [f for f in os.listdir('.') if f.startswith('videos_cache_') and f.endswith('.json')]
+        for cache_file in cache_files:
+            os.remove(cache_file)
+            print(f"🗑️ Deleted cache file: {cache_file}")
+        
+        return jsonify({'message': f'Cleared {len(cache_files)} cache files'})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({'error': str(e)}), 500
 
-@app.route('/api/channel')
-def get_channel():
-    # Check if user is authenticated
-    if 'user_authenticated' not in session:
-        return jsonify({"error": "Authentication required"}), 401
-    try:
-        # Get credentials first
-        creds = get_credentials()
-        if not creds:
-            return jsonify({
-                "title": "YouTube Dashboard",
-                "description": "Sign in to view your channel",
-                "thumbnail": "",
-                "subscriberCount": 0,
-                "videoCount": 0,
-                "viewCount": 0,
-                "error": "Authentication required"
-            }), 401
-        
-        youtube = build("youtube", "v3", credentials=creds)
-        
-        channel_request = youtube.channels().list(
-            part="snippet,statistics",
-            mine=True
-        )
-        response = channel_request.execute()
-        
-        if response.get("items"):
-            channel = response["items"][0]
-            return jsonify({
-                "title": channel["snippet"]["title"],
-                "description": channel["snippet"]["description"],
-                "thumbnail": channel["snippet"]["thumbnails"]["default"]["url"],
-                "subscriberCount": channel["statistics"].get("subscriberCount", 0),
-                "videoCount": channel["statistics"].get("videoCount", 0),
-                "viewCount": channel["statistics"].get("viewCount", 0)
-            })
-        
-        # Fallback if no channel found
-        return jsonify({
-            "title": "YouTube Dashboard",
-            "description": "No channel found",
-            "thumbnail": "",
-            "subscriberCount": 0,
-            "videoCount": 0,
-            "viewCount": 0,
-            "error": "No channel found"
-        }), 404
-        
-    except Exception as e:
-        print(f"Channel API error: {e}")
-        # Fallback on any error
-        return jsonify({
-            "title": "YouTube Dashboard",
-            "description": "Error loading channel",
-            "thumbnail": "",
-            "subscriberCount": 0,
-            "videoCount": 0,
-            "viewCount": 0,
-            "error": "Channel loading failed"
-        }), 500
-
-# Global error handler for unhandled exceptions
 @app.errorhandler(Exception)
 def handle_exception(e):
-    """Handle any unhandled exceptions"""
+    """Global error handler"""
     print(f"❌ Unhandled exception: {e}")
     print(f"❌ Exception type: {type(e).__name__}")
-    import traceback
-    print(f"❌ Traceback: {traceback.format_exc()}")
-    return jsonify({"error": "Internal server error occurred"}), 500
+    print(f"❌ Traceback: {e}")
+    return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, use_reloader=False) 
