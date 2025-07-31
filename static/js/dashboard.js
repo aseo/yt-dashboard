@@ -447,13 +447,13 @@ function updateTable() {
                     </div>
                 </div>
             </td>
-            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatDate(video.publishedAt)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.views)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.likes)}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.length}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${video.watchTime}</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm ${getWatchPercentageColor(video.percentWatched, video.length)}">${video.percentWatched}%</td>
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.subsGained)}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatDate(video.publishedAt)}</td>
         </tr>
     `).join('');
 }
