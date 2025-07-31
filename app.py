@@ -248,12 +248,7 @@ def google_auth_callback():
         flash('Authentication failed. Please try again.', 'error')
         return redirect(url_for('index'))
 
-@app.route('/logout')
-def logout():
-    """Logout user by clearing session"""
-    session.clear()
-    flash('You have been logged out successfully.', 'success')
-    return redirect(url_for('login'))
+
 
 @app.route('/favicon.ico')
 def favicon():

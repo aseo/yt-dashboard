@@ -83,7 +83,7 @@ async function loadChannelInfo() {
         } else {
             // User is not authenticated - show sign in button
             channelInfo.innerHTML = `
-                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('Sign In clicked in header')">
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('Sign In clicked in header'); return true;">
                     <i class="fas fa-sign-in-alt mr-1"></i>
                     Sign In
                 </a>
@@ -194,7 +194,7 @@ async function loadVideos(forceRefresh = false) {
                             <div class="text-center">
                                 <h3 class="text-lg font-medium text-gray-900 mb-2">Sign in to view your YouTube analytics</h3>
                                 <p class="text-gray-500 mb-6">Connect your Google account to see detailed metrics for your videos</p>
-                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors" onclick="console.log('Sign In clicked in table')">
+                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors" onclick="console.log('Sign In clicked in table'); return true;">
                                     <i class="fab fa-google mr-2"></i>
                                     Sign in with Google
                                 </a>
@@ -359,7 +359,67 @@ function updateTable() {
 }
 
 // Initialize dashboard
-document.addEventListener('DOMContentLoaded', function() {
-    loadChannelInfo();
-    loadVideos();
+document.addEventListener('DOMContentLoaded', async function() {
+    // First check if user is authenticated
+    try {
+        const response = await fetch('/api/channel');
+        const data = await response.json();
+        
+        if (data.authenticated) {
+            // User is authenticated - show channel info and load videos
+            const channelInfo = document.getElementById('channel-info');
+            channelInfo.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <img class="w-8 h-8 rounded-full" src="${data.thumbnail}" alt="${data.title}">
+                    <div>
+                        <div class="font-medium">${data.title}</div>
+                        <div class="text-xs opacity-75">${formatNumber(data.subscriberCount)} subscribers</div>
+                    </div>
+                </div>
+            `;
+            loadVideos();
+        } else {
+            // User is not authenticated - show sign in button and placeholder
+            const channelInfo = document.getElementById('channel-info');
+            channelInfo.innerHTML = `
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('Sign In clicked in header'); return true;">
+                    <i class="fas fa-sign-in-alt mr-1"></i>
+                    Sign In
+                </a>
+            `;
+            
+            // Show sign-in placeholder in table area
+            document.getElementById('videos-table').innerHTML = `
+                <tr>
+                    <td colspan="8" class="px-6 py-12 text-center">
+                        <div class="flex flex-col items-center space-y-6">
+                            <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                                <i class="fas fa-chart-line text-blue-600 text-2xl"></i>
+                            </div>
+                            <div class="text-center">
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">Sign in to view your YouTube analytics</h3>
+                                <p class="text-gray-500 mb-6">Connect your Google account to see detailed metrics for your videos</p>
+                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors" onclick="console.log('Sign In clicked in table'); return true;">
+                                    <i class="fab fa-google mr-2"></i>
+                                    Sign in with Google
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+            
+            // Update video count to show sign in message
+            const countElement = document.getElementById('video-count');
+            if (countElement) {
+                countElement.textContent = 'Sign in to view your videos';
+                countElement.className = 'text-sm text-gray-500';
+            }
+        }
+    } catch (error) {
+        console.error('Error checking authentication status:', error);
+        // Fallback - load both
+        loadChannelInfo();
+        loadVideos();
+    }
 });
