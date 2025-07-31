@@ -392,6 +392,7 @@ def get_videos():
         cache_file = f"videos_cache_{channel_id}_{datetime.now().strftime('%Y-%m-%d')}_{'morning' if datetime.now().hour < 12 else 'afternoon'}.json"
         
         if not force_refresh and os.path.exists(cache_file):
+            print(f"🔍 DEBUG: Found cache file: {cache_file}")
             try:
                 with open(cache_file, 'r') as f:
                     cached_data = json.load(f)
@@ -399,6 +400,7 @@ def get_videos():
                 # Check if cache is still valid (6 hours)
                 cache_time = datetime.fromisoformat(cached_data.get('cache_time', '2000-01-01'))
                 if datetime.now() - cache_time < timedelta(hours=6):
+                    print(f"🔍 DEBUG: Cache is valid, using cached data")
                     # Validate cache structure - check if it has the correct field names
                     videos = cached_data.get('videos', [])
                     if videos and len(videos) > 0:
@@ -426,11 +428,18 @@ def get_videos():
                         print(f"❌ Cache is empty")
                         # Remove empty cache file
                         os.remove(cache_file)
+                else:
+                    print(f"🔍 DEBUG: Cache is expired, will fetch fresh data")
             except Exception as e:
-                print(f"❌ Cache error: {e}")
+                print(f"🔍 DEBUG: Cache error: {e}")
                 # Remove corrupted cache file
                 if os.path.exists(cache_file):
                     os.remove(cache_file)
+        else:
+            if force_refresh:
+                print(f"🔍 DEBUG: Force refresh requested, will fetch fresh data")
+            else:
+                print(f"🔍 DEBUG: No cache file found, will fetch fresh data")
         
         if force_refresh:
             print("🔄 Force refresh requested - clearing cache...")
@@ -442,8 +451,9 @@ def get_videos():
         # Build YouTube Analytics API client
         youtube_analytics = build('youtubeAnalytics', 'v2', credentials=creds)
         
-        # Get all videos
+        # Get all videos using search API, then filter by privacy status
         try:
+            # Get all videos for the channel using search API
             search_request = youtube.search().list(
                 part='snippet',
                 forMine=True,
@@ -457,24 +467,37 @@ def get_videos():
             if not response.get('items'):
                 return jsonify({'videos': [], 'error': 'No videos found'})
             
-            # Get all video IDs
+            # Get all video IDs from search results
             all_video_items = response.get("items", [])
+            all_video_ids = [item["id"]["videoId"] for item in all_video_items]
+            
+            # Get detailed video info including privacy status
+            videos_request = youtube.videos().list(
+                part='snippet,contentDetails,statistics,status',
+                id=','.join(all_video_ids)
+            )
+            videos_response = videos_request.execute()
+            
+            # Filter to only public videos
+            all_videos = videos_response.get('items', [])
+            public_videos = [video for video in all_videos 
+                           if video.get('status', {}).get('privacyStatus') == 'public']
+            
+            if not public_videos:
+                return jsonify({'videos': [], 'error': 'No public videos found'})
+            
+            # Get video IDs for analytics
+            video_ids = [video['id'] for video in public_videos]
+            total_videos_fetched = len(video_ids)
+            
+            print(f"✅ Processing {len(public_videos)} public videos")
+            
         except Exception as e:
-            print(f"❌ Search API error (likely quota exceeded): {e}")
+            print(f"❌ Search/Videos API error (likely quota exceeded): {e}")
             # Use test mode with mock data
             return get_test_videos(sort_by, sort_direction, force_refresh)
         
-        video_ids = [item["id"]["videoId"] for item in all_video_items]
-        total_videos_fetched = len(video_ids)
-        
         print(f"Fetching metrics for {total_videos_fetched} videos")
-        
-        # Get detailed video info
-        videos_request = youtube.videos().list(
-            part='snippet,contentDetails,statistics,status',
-            id=','.join(video_ids)
-        )
-        videos_response = videos_request.execute()
         
         # Get analytics data for ALL videos using Groups API (single call)
         print(f"🔄 Fetching metrics for all {total_videos_fetched} videos using Groups API...")
@@ -487,7 +510,7 @@ def get_videos():
         
         # Process videos with the fetched metrics
         videos_with_metrics = []
-        for i, video in enumerate(videos_response.get('items', []), 1):
+        for i, video in enumerate(public_videos, 1):
             video_id = video['id']
             print(f"Processing video {i}/{total_videos_fetched}: {video_id}")
             
