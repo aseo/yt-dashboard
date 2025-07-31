@@ -1,8 +1,7 @@
 let videosData = [];
 let currentSort = { column: 'published', direction: 'desc' };
-let currentPage = 1;
-let perPage = 10;
-let paginationData = null;
+let totalVideosFetched = 0;
+let totalVideosAvailable = 0;
 
 // Format numbers with commas
 function formatNumber(num) {
@@ -99,23 +98,83 @@ function signIn() {
     alert('Sign-in feature coming soon! For now, this dashboard is configured for a single user.');
 }
 
+// Refresh data function
+async function refreshData() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    const icon = refreshBtn.querySelector('i');
+    
+    // Show loading state
+    icon.className = 'fas fa-spinner fa-spin';
+    refreshBtn.disabled = true;
+    
+    try {
+        // Force refresh by setting refresh=true
+        await loadVideos(true);
+        
+        // Show success state briefly
+        icon.className = 'fas fa-check text-green-600';
+        setTimeout(() => {
+            icon.className = 'fas fa-sync-alt';
+            refreshBtn.disabled = false;
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        
+        // Show error state
+        icon.className = 'fas fa-exclamation-triangle text-red-600';
+        setTimeout(() => {
+            icon.className = 'fas fa-sync-alt';
+            refreshBtn.disabled = false;
+        }, 2000);
+    }
+}
+
 // Load videos data
 async function loadVideos(forceRefresh = false) {
     try {
-        const url = `/api/videos?sort_by=${currentSort.column}&sort_direction=${currentSort.direction}&page=${currentPage}&per_page=${perPage}&refresh=${forceRefresh}`;
+        // Show loading state
+        document.getElementById('videos-table').innerHTML = `
+            <tr>
+                <td colspan="8" class="px-6 py-8 text-center">
+                    <div class="flex flex-col items-center justify-center space-y-2">
+                        <div class="flex items-center space-x-2">
+                            <div class="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600"></div>
+                            <span class="text-gray-600">Loading videos...</span>
+                        </div>
+                        <div class="text-sm text-gray-500">Retrieving up to 50 videos</div>
+                    </div>
+                </td>
+            </tr>
+        `;
+        
+        const url = `/api/videos?sort_by=${currentSort.column}&sort_direction=${currentSort.direction}&refresh=${forceRefresh}`;
         const response = await fetch(url);
         const data = await response.json();
         
-        // Handle new data structure with last_updated
+        // Handle new data structure with last_updated and video counts
         if (data.videos && data.last_updated) {
             videosData = data.videos;
-            paginationData = data.pagination; // Assuming pagination data is returned
+            totalVideosFetched = data.total_videos_fetched || data.videos.length;
+            totalVideosAvailable = data.total_videos_available || data.videos.length;
+            
             // Update the last updated timestamp in the header
             document.getElementById('last-updated').textContent = `Last Updated: ${data.last_updated}`;
+            
+            // Update video count indicator
+            updateVideoCount();
+            
+            // Show cache status if available
+            if (data.cached) {
+                console.log('📦 Loaded from cache - fast response!');
+            } else {
+                console.log('🔄 Fresh data loaded from YouTube APIs');
+            }
         } else {
             // Fallback for old data structure
             videosData = data;
-            paginationData = null; // No pagination data if old structure
+            totalVideosFetched = data.length;
+            totalVideosAvailable = data.length;
         }
         
         updateTable();
@@ -128,6 +187,20 @@ async function loadVideos(forceRefresh = false) {
                 </td>
             </tr>
         `;
+    }
+}
+
+// Update video count indicator
+function updateVideoCount() {
+    const countElement = document.getElementById('video-count');
+    if (countElement) {
+        if (totalVideosAvailable > totalVideosFetched) {
+            countElement.textContent = `Showing ${totalVideosFetched} of ${totalVideosAvailable} videos`;
+            countElement.className = 'text-sm text-gray-600';
+        } else {
+            countElement.textContent = `Showing ${totalVideosFetched} videos`;
+            countElement.className = 'text-sm text-gray-600';
+        }
     }
 }
 
@@ -194,52 +267,11 @@ function sortTable(column) {
     // Update sort icons
     updateSortIcons(column, currentSort.direction);
     
-    // Reset to first page when sorting
-    currentPage = 1;
-    
     // Load videos with new sort
     loadVideos();
 }
 
-// Update pagination controls
-function updatePagination() {
-    const controls = document.getElementById('pagination-controls');
-    
-    if (!paginationData) {
-        controls.classList.add('hidden');
-        return;
-    }
-    
-    controls.classList.remove('hidden');
-    
-    // Update pagination info
-    document.getElementById('showing-start').textContent = ((paginationData.current_page - 1) * paginationData.per_page) + 1;
-    document.getElementById('showing-end').textContent = Math.min(paginationData.current_page * paginationData.per_page, paginationData.total_videos);
-    document.getElementById('total-videos').textContent = paginationData.total_videos;
-    document.getElementById('page-info').textContent = `Page ${paginationData.current_page} of ${paginationData.total_pages}`;
-    
-    // Update button states
-    document.getElementById('prev-page').disabled = !paginationData.has_prev;
-    document.getElementById('next-page').disabled = !paginationData.has_next;
-}
 
-// Pagination event handlers
-function goToPage(page) {
-    currentPage = page;
-    loadVideos();
-}
-
-function nextPage() {
-    if (paginationData && paginationData.has_next) {
-        goToPage(currentPage + 1);
-    }
-}
-
-function prevPage() {
-    if (paginationData && paginationData.has_prev) {
-        goToPage(currentPage - 1);
-    }
-}
 
 // Update sort icons
 function updateSortIcons(activeColumn, direction) {
@@ -255,7 +287,7 @@ function updateSortIcons(activeColumn, direction) {
     });
 }
 
-// Update videos table with pagination
+// Update videos table
 function updateTable() {
     const tbody = document.getElementById('videos-table');
     
@@ -270,7 +302,7 @@ function updateTable() {
         return;
     }
     
-    // Display current page videos
+    // Display all videos
     tbody.innerHTML = videosData.map(video => `
         <tr class="hover:bg-gray-50">
             <td class="px-6 py-4">
@@ -290,17 +322,10 @@ function updateTable() {
             <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">${formatNumber(video.subs_gained)}</td>
         </tr>
     `).join('');
-    
-    // Update pagination controls
-    updatePagination();
 }
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', function() {
     loadChannelInfo();
     loadVideos();
-    
-    // Add event listeners for pagination
-    document.getElementById('prev-page').addEventListener('click', prevPage);
-    document.getElementById('next-page').addEventListener('click', nextPage);
 });
