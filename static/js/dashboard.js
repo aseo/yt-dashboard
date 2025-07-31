@@ -83,7 +83,7 @@ async function loadChannelInfo() {
         } else {
             // User is not authenticated - show sign in button
             channelInfo.innerHTML = `
-                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center">
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('Sign In clicked in header')">
                     <i class="fas fa-sign-in-alt mr-1"></i>
                     Sign In
                 </a>
@@ -194,7 +194,7 @@ async function loadVideos(forceRefresh = false) {
                             <div class="text-center">
                                 <h3 class="text-lg font-medium text-gray-900 mb-2">Sign in to view your YouTube analytics</h3>
                                 <p class="text-gray-500 mb-6">Connect your Google account to see detailed metrics for your videos</p>
-                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors">
+                                <a href="/auth/google" class="inline-flex items-center px-6 py-3 bg-blue-600 text-white font-medium rounded-lg hover:bg-blue-700 transition-colors" onclick="console.log('Sign In clicked in table')">
                                     <i class="fab fa-google mr-2"></i>
                                     Sign in with Google
                                 </a>
