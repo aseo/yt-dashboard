@@ -157,6 +157,9 @@ def authenticate():
                 else:
                     raise e
             
+            # Clear any existing session data for new user
+            session.clear()
+            
             # Store credentials in session
             session['user_credentials'] = {
                 'token': creds.token,
@@ -217,6 +220,9 @@ def google_auth_callback():
     """Handle Google OAuth callback (production only)"""
     try:
         print(f"🔄 OAuth callback received: {request.url}")
+        
+        # Clear any existing session data for new user
+        session.clear()
         
         # Load client secrets
         if os.environ.get('GOOGLE_CREDENTIALS'):
@@ -324,8 +330,22 @@ def get_videos():
         sort_direction = request.args.get('sort_direction', 'desc')
         force_refresh = request.args.get('refresh', 'false').lower() == 'true'
         
-        # Check cache first (unless force refresh)
-        cache_file = f"videos_cache_{datetime.now().strftime('%Y-%m-%d')}_{'morning' if datetime.now().hour < 12 else 'afternoon'}.json"
+        # Build YouTube API client
+        youtube = build('youtube', 'v3', credentials=creds)
+        
+        # Get user's channel ID for cache identification
+        channels_response = youtube.channels().list(
+            part='id',
+            mine=True
+        ).execute()
+        
+        if not channels_response.get('items'):
+            return jsonify({'authenticated': False, 'error': 'No channel found'})
+        
+        channel_id = channels_response['items'][0]['id']
+        
+        # Check cache first (unless force refresh) - make cache user-specific
+        cache_file = f"videos_cache_{channel_id}_{datetime.now().strftime('%Y-%m-%d')}_{'morning' if datetime.now().hour < 12 else 'afternoon'}.json"
         
         if not force_refresh and os.path.exists(cache_file):
             try:
@@ -375,8 +395,7 @@ def get_videos():
         
         print("Fetching fresh data from YouTube APIs...")
         
-        # Build YouTube API client
-        youtube = build('youtube', 'v3', credentials=creds)
+        # Build YouTube Analytics API client
         youtube_analytics = build('youtubeAnalytics', 'v2', credentials=creds)
         
         # Get all videos
