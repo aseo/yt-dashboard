@@ -127,10 +127,7 @@ async function loadChannelInfo() {
             channelInfo.innerHTML = `
                 <div class="flex items-center space-x-2">
                     <img class="w-8 h-8 rounded-full" src="${data.thumbnail}" alt="${data.title}">
-                    <div>
-                        <div class="font-medium">${data.title}</div>
-                        <div class="text-xs opacity-75">${formatNumber(data.subscriberCount)} subscribers</div>
-                    </div>
+                    <div class="font-medium">${data.title}</div>
                 </div>
             `;
         } else {
@@ -478,10 +475,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             channelInfo.innerHTML = `
                 <div class="flex items-center space-x-2">
                     <img class="w-8 h-8 rounded-full" src="${data.thumbnail}" alt="${data.title}">
-                    <div>
-                        <div class="font-medium">${data.title}</div>
-                        <div class="text-xs opacity-75">${formatNumber(data.subscriberCount)} subscribers</div>
-                    </div>
+                    <div class="font-medium">${data.title}</div>
                 </div>
             `;
             loadVideos();
