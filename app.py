@@ -1,4 +1,4 @@
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -11,6 +11,9 @@ from config import config
 
 app = Flask(__name__)
 app.config.from_object(config[os.environ.get('FLASK_ENV', 'development')])
+
+# Enable sessions for user authentication
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.readonly",
@@ -441,10 +444,49 @@ def get_group_analytics(group_id, youtube_analytics, youtube_data):
 
 @app.route('/')
 def dashboard():
+    # Check if user is authenticated
+    if 'user_authenticated' not in session:
+        return redirect(url_for('login'))
     return app.send_static_file('dashboard.html')
+
+@app.route('/login')
+def login():
+    if 'user_authenticated' in session:
+        return redirect(url_for('dashboard'))
+    return app.send_static_file('login.html')
+
+@app.route('/auth/google')
+def google_auth():
+    """Handle Google OAuth authentication"""
+    if os.environ.get('FLASK_ENV') == 'production':
+        # In production, you'd implement proper OAuth flow
+        # For now, we'll use a simple approach
+        session['user_authenticated'] = True
+        session['user_email'] = 'user@example.com'  # You'd get this from OAuth
+        return redirect(url_for('dashboard'))
+    else:
+        # Development: use the existing OAuth flow
+        try:
+            creds = authenticate()
+            if creds:
+                session['user_authenticated'] = True
+                session['user_email'] = 'dev-user@example.com'
+                return redirect(url_for('dashboard'))
+            else:
+                return "Authentication failed", 401
+        except Exception as e:
+            return f"Authentication error: {e}", 500
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 @app.route('/api/videos')
 def get_videos():
+    # Check if user is authenticated
+    if 'user_authenticated' not in session:
+        return jsonify({"error": "Authentication required"}), 401
     try:
         # Get credentials first with better error handling
         try:
@@ -627,6 +669,9 @@ def get_videos():
 
 @app.route('/api/clear-cache')
 def clear_cache():
+    # Check if user is authenticated
+    if 'user_authenticated' not in session:
+        return jsonify({"error": "Authentication required"}), 401
     """Clear all cache files"""
     try:
         clear_old_cache()
@@ -636,6 +681,9 @@ def clear_cache():
 
 @app.route('/api/channel')
 def get_channel():
+    # Check if user is authenticated
+    if 'user_authenticated' not in session:
+        return jsonify({"error": "Authentication required"}), 401
     try:
         # Get credentials first
         creds = get_credentials()
