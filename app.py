@@ -1,5 +1,5 @@
 from flask import Flask, render_template, jsonify, request, session, redirect, url_for, flash
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import InstalledAppFlow, Flow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -123,7 +123,7 @@ def authenticate():
         if is_production:
             # Production: Use web-based OAuth flow
             redirect_uri = 'https://yt-dashboard.onrender.com/auth/google/callback'
-            flow = InstalledAppFlow.from_client_config(
+            flow = Flow.from_client_config(
                 client_config,
                 scopes=SCOPES,
                 redirect_uri=redirect_uri
