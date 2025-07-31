@@ -403,7 +403,7 @@ def get_videos():
             part='snippet',
             forMine=True,
             type='video',
-            maxResults=50,
+            maxResults=75,
             order='date'
         )
         

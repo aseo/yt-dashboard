@@ -3,9 +3,62 @@ let currentSort = { column: 'published', direction: 'desc' };
 let totalVideosFetched = 0;
 let totalVideosAvailable = 0;
 
+// Anti-spam variables
+let lastRefreshTime = 0;
+const REFRESH_COOLDOWN = 30000; // 30 seconds cooldown
+let refreshCount = 0;
+const MAX_REFRESHES_PER_HOUR = 10; // Max 10 refreshes per hour
+
 // Format numbers with commas
 function formatNumber(num) {
     return new Intl.NumberFormat().format(num);
+}
+
+// Toast notification function
+function showToast(message, type = 'info') {
+    // Remove existing toast
+    const existingToast = document.getElementById('toast');
+    if (existingToast) {
+        existingToast.remove();
+    }
+    
+    // Create toast element
+    const toast = document.createElement('div');
+    toast.id = 'toast';
+    toast.className = `fixed top-4 right-4 z-50 px-6 py-3 rounded-lg shadow-lg text-white font-medium transition-all duration-300 transform translate-x-full`;
+    
+    // Set color based on type
+    switch (type) {
+        case 'success':
+            toast.className += ' bg-green-600';
+            break;
+        case 'error':
+            toast.className += ' bg-red-600';
+            break;
+        case 'warning':
+            toast.className += ' bg-yellow-600';
+            break;
+        default:
+            toast.className += ' bg-blue-600';
+    }
+    
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    // Animate in
+    setTimeout(() => {
+        toast.classList.remove('translate-x-full');
+    }, 100);
+    
+    // Auto remove after 4 seconds
+    setTimeout(() => {
+        toast.classList.add('translate-x-full');
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 300);
+    }, 4000);
 }
 
 // Format date from ISO string
@@ -106,6 +159,22 @@ async function refreshData() {
     const refreshBtn = document.getElementById('refresh-btn');
     const icon = refreshBtn.querySelector('i');
     
+    // Check cooldown period
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    
+    if (timeSinceLastRefresh < REFRESH_COOLDOWN) {
+        const remainingTime = Math.ceil((REFRESH_COOLDOWN - timeSinceLastRefresh) / 1000);
+        showToast(`Please wait ${remainingTime} seconds before refreshing again`, 'warning');
+        return;
+    }
+    
+    // Check hourly limit
+    if (refreshCount >= MAX_REFRESHES_PER_HOUR) {
+        showToast('Refresh limit reached. Please wait an hour before refreshing again.', 'error');
+        return;
+    }
+    
     // Show loading state
     icon.className = 'fas fa-spinner fa-spin';
     refreshBtn.disabled = true;
@@ -114,8 +183,18 @@ async function refreshData() {
         // Force refresh by setting refresh=true
         await loadVideos(true);
         
+        // Update anti-spam counters
+        lastRefreshTime = now;
+        refreshCount++;
+        
+        // Reset refresh count after 1 hour
+        setTimeout(() => {
+            refreshCount = Math.max(0, refreshCount - 1);
+        }, 3600000); // 1 hour
+        
         // Show success state briefly
         icon.className = 'fas fa-check text-green-600';
+        showToast('Data refreshed successfully!', 'success');
         setTimeout(() => {
             icon.className = 'fas fa-sync-alt';
             refreshBtn.disabled = false;
@@ -126,6 +205,7 @@ async function refreshData() {
         
         // Show error state
         icon.className = 'fas fa-exclamation-triangle text-red-600';
+        showToast('Failed to refresh data. Please try again later.', 'error');
         setTimeout(() => {
             icon.className = 'fas fa-sync-alt';
             refreshBtn.disabled = false;
@@ -235,6 +315,29 @@ function updateVideoCount() {
             countElement.textContent = `Showing ${totalVideosFetched} videos`;
             countElement.className = 'text-sm text-gray-600';
         }
+    }
+}
+
+// Update refresh button status
+function updateRefreshButtonStatus() {
+    const refreshBtn = document.getElementById('refresh-btn');
+    const icon = refreshBtn.querySelector('i');
+    const now = Date.now();
+    const timeSinceLastRefresh = now - lastRefreshTime;
+    
+    if (timeSinceLastRefresh < REFRESH_COOLDOWN) {
+        const remainingTime = Math.ceil((REFRESH_COOLDOWN - timeSinceLastRefresh) / 1000);
+        refreshBtn.title = `Refresh available in ${remainingTime} seconds`;
+        refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        icon.className = 'fas fa-clock text-gray-400';
+    } else if (refreshCount >= MAX_REFRESHES_PER_HOUR) {
+        refreshBtn.title = 'Refresh limit reached (10 per hour)';
+        refreshBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        icon.className = 'fas fa-ban text-red-400';
+    } else {
+        refreshBtn.title = 'Refresh data';
+        refreshBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        icon.className = 'fas fa-sync-alt';
     }
 }
 
@@ -360,6 +463,10 @@ function updateTable() {
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', async function() {
+    // Initialize refresh button status timer
+    updateRefreshButtonStatus();
+    setInterval(updateRefreshButtonStatus, 1000); // Update every second
+    
     // First check if user is authenticated
     try {
         const response = await fetch('/api/channel');
