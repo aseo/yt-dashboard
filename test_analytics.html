@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analytics Test Page</title>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-DM32RGJ1MN"></script>
+    <script>
+        window.dataLayer = window.dataLayer || [];
+        function gtag(){dataLayer.push(arguments);}
+        gtag('js', new Date());
+        gtag('config', 'G-DM32RGJ1MN');
+    </script>
+</head>
+<body style="font-family: Arial, sans-serif; padding: 20px;">
+    <h1>Google Analytics Test Page</h1>
+    
+    <h2>Test Events:</h2>
+    
+    <button onclick="testSignInClick()" style="padding: 10px; margin: 10px; background: blue; color: white; border: none; border-radius: 5px;">
+        Test Sign-In Click (Header)
+    </button>
+    
+    <button onclick="testSignInSuccess()" style="padding: 10px; margin: 10px; background: green; color: white; border: none; border-radius: 5px;">
+        Test Sign-In Success
+    </button>
+    
+    <button onclick="testPageView()" style="padding: 10px; margin: 10px; background: orange; color: white; border: none; border-radius: 5px;">
+        Test Custom Page View
+    </button>
+    
+    <div id="status" style="margin-top: 20px; padding: 10px; background: #f0f0f0; border-radius: 5px;">
+        <h3>Test Status:</h3>
+        <p>Click buttons above to test events. Check Google Analytics Real-Time reports to see events.</p>
+    </div>
+    
+    <script>
+        function testSignInClick() {
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'sign_in_click', {
+                    'event_category': 'engagement',
+                    'event_label': 'test_header_button'
+                });
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>✅ Sign-in click event sent! Check Google Analytics Real-Time → Events</p>';
+            } else {
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>❌ gtag not found - Google Analytics not loaded</p>';
+            }
+        }
+        
+        function testSignInSuccess() {
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'sign_in_success', {
+                    'event_category': 'engagement',
+                    'event_label': 'test_successful_authentication'
+                });
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>✅ Sign-in success event sent! Check Google Analytics Real-Time → Events</p>';
+            } else {
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>❌ gtag not found - Google Analytics not loaded</p>';
+            }
+        }
+        
+        function testPageView() {
+            if (typeof gtag !== 'undefined') {
+                gtag('config', 'G-DM32RGJ1MN', {
+                    'page_title': 'Test Page',
+                    'page_location': window.location.href
+                });
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>✅ Page view event sent! Check Google Analytics Real-Time → Overview</p>';
+            } else {
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>❌ gtag not found - Google Analytics not loaded</p>';
+            }
+        }
+        
+        // Test that gtag is loaded
+        window.addEventListener('load', function() {
+            if (typeof gtag !== 'undefined') {
+                console.log('✅ Google Analytics loaded successfully');
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>✅ Google Analytics loaded! Ready to test events.</p>';
+            } else {
+                console.log('❌ Google Analytics not loaded');
+                document.getElementById('status').innerHTML = '<h3>Test Status:</h3><p>❌ Google Analytics not loaded</p>';
+            }
+        });
+    </script>
+</body>
+</html> 
