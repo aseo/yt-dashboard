@@ -84,33 +84,56 @@ function getWatchPercentageColor(watchPercent, videoLength) {
     const parts = videoLength.split(':');
     const lengthInSeconds = parseInt(parts[0]) * 60 + parseInt(parts[1]);
     
-    // Define benchmarks based on video length
-    let goodRange, excellentRange;
+    // Define benchmarks based on video length (Shorts vs Long-Form)
+    let needsImprovementThreshold, goodThreshold, greatThreshold;
     
-    if (lengthInSeconds <= 15) {
-        goodRange = [85, 100];
-        excellentRange = [95, 100];
-    } else if (lengthInSeconds <= 30) {
-        goodRange = [75, 90];
-        excellentRange = [85, 100];
-    } else if (lengthInSeconds <= 45) {
-        goodRange = [70, 85];
-        excellentRange = [80, 100];
-    } else if (lengthInSeconds <= 60) {
-        goodRange = [65, 80];
-        excellentRange = [75, 100];
-    } else {
-        // For videos longer than 60 seconds, use a general benchmark
-        goodRange = [60, 75];
-        excellentRange = [70, 100];
+    // Shorts benchmarks (under 60 seconds)
+    if (lengthInSeconds < 10) {
+        needsImprovementThreshold = 80;
+        goodThreshold = 80;
+        greatThreshold = 100;
+    } else if (lengthInSeconds < 20) {
+        needsImprovementThreshold = 70;
+        goodThreshold = 70;
+        greatThreshold = 90;
+    } else if (lengthInSeconds < 40) {
+        needsImprovementThreshold = 60;
+        goodThreshold = 60;
+        greatThreshold = 80;
+    } else if (lengthInSeconds < 60) {
+        needsImprovementThreshold = 50;
+        goodThreshold = 50;
+        greatThreshold = 70;
+    }
+    // Long-form benchmarks (60+ seconds)
+    else if (lengthInSeconds <= 180) { // 1-3 minutes
+        needsImprovementThreshold = 50;
+        goodThreshold = 50;
+        greatThreshold = 70;
+    } else if (lengthInSeconds <= 300) { // 3-5 minutes
+        needsImprovementThreshold = 40;
+        goodThreshold = 40;
+        greatThreshold = 60;
+    } else if (lengthInSeconds <= 600) { // 5-10 minutes
+        needsImprovementThreshold = 30;
+        goodThreshold = 30;
+        greatThreshold = 50;
+    } else if (lengthInSeconds <= 900) { // 10-15 minutes
+        needsImprovementThreshold = 25;
+        goodThreshold = 25;
+        greatThreshold = 45;
+    } else { // 15+ minutes
+        needsImprovementThreshold = 20;
+        goodThreshold = 20;
+        greatThreshold = 40;
     }
     
-    if (watchPercent >= excellentRange[0]) {
-        return 'text-blue-600 font-bold'; // Blue for excellent
-    } else if (watchPercent >= goodRange[0]) {
+    if (watchPercent >= greatThreshold) {
+        return 'text-blue-600 font-bold'; // Blue for great
+    } else if (watchPercent >= goodThreshold) {
         return 'text-green-600 font-semibold'; // Green for good
     } else {
-        return 'text-orange-600 font-semibold'; // Orange for below target
+        return 'text-orange-600 font-semibold'; // Orange for needs improvement
     }
 }
 
