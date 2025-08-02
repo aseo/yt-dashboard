@@ -499,12 +499,34 @@ document.addEventListener('DOMContentLoaded', async function() {
         const data = await response.json();
         
         if (data.authenticated) {
-            // Track successful sign-in
+            // Track authenticated user visit
             if (typeof gtag !== 'undefined') {
-                gtag('event', 'sign_in_success', {
+                gtag('event', 'user_visit', {
                     'event_category': 'engagement',
-                    'event_label': 'successful_authentication'
+                    'event_label': 'authenticated_user',
+                    'custom_parameter_1': 'signed_in'
                 });
+            }
+            
+            // Track successful sign-in only if user just completed OAuth
+            const urlParams = new URLSearchParams(window.location.search);
+            const justSignedIn = urlParams.get('just_signed_in');
+            
+            if (justSignedIn === 'true') {
+                console.log('🔍 User just completed OAuth, checking gtag availability:', typeof gtag);
+                if (typeof gtag !== 'undefined') {
+                    console.log('✅ Sending sign_in_success event for completed OAuth');
+                    gtag('event', 'sign_in_success', {
+                        'event_category': 'engagement',
+                        'event_label': 'successful_authentication'
+                    });
+                } else {
+                    console.log('❌ gtag not available for sign_in_success');
+                }
+                
+                // Clean up the URL parameter
+                const newUrl = window.location.pathname;
+                window.history.replaceState({}, document.title, newUrl);
             }
             
             // User is authenticated - show channel info and load videos
@@ -517,10 +539,19 @@ document.addEventListener('DOMContentLoaded', async function() {
             `;
             loadVideos();
         } else {
+            // Track unauthenticated user visit
+            if (typeof gtag !== 'undefined') {
+                gtag('event', 'user_visit', {
+                    'event_category': 'engagement',
+                    'event_label': 'unauthenticated_user',
+                    'custom_parameter_1': 'signed_out'
+                });
+            }
+            
             // User is not authenticated - show sign in button and placeholder
             const channelInfo = document.getElementById('channel-info');
             channelInfo.innerHTML = `
-                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="if(typeof gtag !== 'undefined') { gtag('event', 'sign_in_click', { 'event_category': 'engagement', 'event_label': 'header_button' }); } return true;">
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('🔍 Header sign-in clicked, gtag available:', typeof gtag); if(typeof gtag !== 'undefined') { console.log('✅ Sending header sign_in_click event'); gtag('event', 'sign_in_click', { 'event_category': 'engagement', 'event_label': 'header_button' }); } else { console.log('❌ gtag not available for header sign-in'); } return true;">
                     <i class="fas fa-sign-in-alt mr-1"></i>
                     Sign In
                 </a>

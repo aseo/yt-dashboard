@@ -253,7 +253,7 @@ def google_auth_callback():
         session.modified = True
         
         print("✅ Production OAuth completed - credentials stored in session")
-        return redirect(url_for('index'))
+        return redirect(url_for('index', just_signed_in='true'))
         
     except Exception as e:
         print(f"❌ OAuth callback error: {e}")
