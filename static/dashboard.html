@@ -8,6 +8,40 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="/static/js/dashboard.js"></script>
+    <script>
+        // Dynamic tooltip positioning
+        document.addEventListener('DOMContentLoaded', function() {
+            const tooltips = document.querySelectorAll('.tooltip');
+            
+            tooltips.forEach(tooltip => {
+                const tooltiptext = tooltip.querySelector('.tooltiptext');
+                
+                tooltip.addEventListener('mouseenter', function(e) {
+                    const rect = tooltip.getBoundingClientRect();
+                    const tooltipWidth = 250;
+                    const tooltipHeight = tooltiptext.offsetHeight;
+                    
+                    // Position above the icon
+                    let top = rect.top - tooltipHeight - 10;
+                    let left = rect.left + (rect.width / 2) - (tooltipWidth / 2);
+                    
+                    // Ensure tooltip stays within viewport
+                    if (top < 10) {
+                        top = rect.bottom + 10; // Show below if not enough space above
+                    }
+                    if (left < 10) {
+                        left = 10;
+                    }
+                    if (left + tooltipWidth > window.innerWidth - 10) {
+                        left = window.innerWidth - tooltipWidth - 10;
+                    }
+                    
+                    tooltiptext.style.top = top + 'px';
+                    tooltiptext.style.left = left + 'px';
+                });
+            });
+        });
+    </script>
     <style>
         .gradient-bg {
             background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
@@ -30,16 +64,22 @@
             text-align: left;
             border-radius: 6px;
             padding: 8px 12px;
-            position: absolute;
-            z-index: 1000;
-            top: 125%;
-            left: 50%;
-            margin-left: -125px;
+            position: fixed;
+            z-index: 9999;
             opacity: 0;
             transition: opacity 0.3s;
             font-size: 12px;
             line-height: 1.4;
             white-space: pre-line;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            pointer-events: none;
+        }
+        
+        /* Ensure tooltip container doesn't get clipped */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            z-index: 10;
         }
         .tooltip:hover .tooltiptext {
             visibility: visible;
@@ -110,7 +150,7 @@
                         <div id="video-count" class="text-sm text-gray-600">Loading up to 100 videos...</div>
                     </div>
                     <div class="flex items-center space-x-4">
-                        <span id="last-updated" class="text-sm text-gray-500"></span>
+                        <span class="text-sm text-gray-500 italic">YouTube Analytics API data have 1-2 day delay</span>
                         <button id="refresh-btn" onclick="refreshData()" class="text-gray-400 hover:text-blue-600 transition-colors" title="Refresh data">
                             <i class="fas fa-sync-alt"></i>
                         </button>

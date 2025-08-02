@@ -49,8 +49,7 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
 
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.readonly',
-    'https://www.googleapis.com/auth/yt-analytics.readonly',
-    'https://www.googleapis.com/auth/youtube'
+    'https://www.googleapis.com/auth/yt-analytics.readonly'
 ]
 
 def get_credentials():
@@ -267,6 +266,11 @@ def google_auth_callback():
 def favicon():
     """Handle favicon requests"""
     return '', 204
+
+@app.route('/health')
+def health_check():
+    """Health check endpoint for ping services"""
+    return {'status': 'healthy', 'timestamp': datetime.now().isoformat()}, 200
 
 @app.route('/privacy')
 def privacy():

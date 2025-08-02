@@ -239,8 +239,7 @@ async function loadVideos(forceRefresh = false) {
                 totalVideosFetched = data.total_videos_fetched || data.videos.length;
                 totalVideosAvailable = data.total_videos_available || data.videos.length;
                 
-                // Update the last updated timestamp in the header
-                document.getElementById('last-updated').textContent = `Last Updated: ${data.last_updated}`;
+                // Last updated timestamp removed - now showing static API delay message
                 
                 // Update video count indicator
                 updateVideoCount();
