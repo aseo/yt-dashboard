@@ -142,17 +142,17 @@ def authenticate():
             flow = InstalledAppFlow.from_client_config(
                 client_config,
                 scopes=SCOPES,
-                redirect_uri='http://localhost:8080/'
+                redirect_uri='http://localhost:8081/'
             )
             
             # Run OAuth flow
             print("🔐 Starting OAuth flow...")
             try:
-                creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
+                creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
             except OSError as e:
                 if "Address already in use" in str(e):
-                    print("🔄 Port 8080 busy, trying port 8081...")
-                    creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
+                    print("🔄 Port 8081 busy, trying port 8082...")
+                    creds = flow.run_local_server(port=8082, access_type='offline', prompt='consent')
                 else:
                     raise e
             
@@ -179,15 +179,10 @@ def authenticate():
 
 @app.route('/')
 def index():
-    """Main dashboard page"""
+    """Main route - serve dashboard page"""
     return app.send_static_file('dashboard.html')
 
-@app.route('/login')
-def login():
-    """Login page"""
-    if 'user_credentials' in session:
-        return redirect(url_for('index'))
-    return render_template('login.html')
+
 
 @app.route('/auth/google')
 def google_auth():
@@ -265,7 +260,17 @@ def google_auth_callback():
 @app.route('/favicon.ico')
 def favicon():
     """Handle favicon requests"""
-    return '', 204
+    return app.send_static_file('favicon.ico')
+
+@app.route('/robots.txt')
+def robots_txt():
+    """Serve robots.txt file"""
+    return app.send_static_file('robots.txt')
+
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    """Serve sitemap.xml file"""
+    return app.send_static_file('sitemap.xml')
 
 @app.route('/health')
 def health_check():

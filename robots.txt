@@ -1,0 +1,17 @@
+User-agent: *
+Allow: /
+
+# Allow crawling of main pages
+Allow: /
+Allow: /privacy
+Allow: /health
+
+# Disallow private pages (require authentication)
+Disallow: /api/
+Disallow: /auth/
+
+# Sitemap location
+Sitemap: https://yt-dashboard.onrender.com/sitemap.xml
+
+# Crawl delay (optional)
+Crawl-delay: 1 
