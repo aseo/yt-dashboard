@@ -44,8 +44,8 @@ app.config.from_object(config[os.environ.get('FLASK_ENV', 'development')])
 # Enable sessions for user authentication
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Set session to last 24 hours
-app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
+# Set session to last 30 days
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 
 SCOPES = [
     'https://www.googleapis.com/auth/youtube.readonly',
@@ -142,17 +142,17 @@ def authenticate():
             flow = InstalledAppFlow.from_client_config(
                 client_config,
                 scopes=SCOPES,
-                redirect_uri='http://localhost:8081/'
+                redirect_uri='http://localhost:8080/'
             )
             
             # Run OAuth flow
             print("🔐 Starting OAuth flow...")
             try:
-                creds = flow.run_local_server(port=8081, access_type='offline', prompt='consent')
+                creds = flow.run_local_server(port=8080, access_type='offline', prompt='consent')
             except OSError as e:
                 if "Address already in use" in str(e):
-                    print("🔄 Port 8081 busy, trying port 8082...")
-                    creds = flow.run_local_server(port=8082, access_type='offline', prompt='consent')
+                    print("❌ Port 8080 is busy. Please close any other applications using port 8080 and try again.")
+                    raise e
                 else:
                     raise e
             
@@ -784,7 +784,7 @@ def clear_session():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/logout')
+@app.route('/api/logout', methods=['POST'])
 def logout():
     """Logout user and clear session"""
     try:

@@ -137,8 +137,36 @@ function getWatchPercentageColor(watchPercent, videoLength) {
     }
 }
 
+// Logout function
+async function logout() {
+    try {
+        const response = await fetch('/api/logout', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (response.ok) {
+            // Clear the page and show sign in state
+            location.reload();
+        } else {
+            showToast('Logout failed. Please try again.', 'error');
+        }
+    } catch (error) {
+        console.error('Logout error:', error);
+        showToast('Logout failed. Please try again.', 'error');
+    }
+}
+
 // Load channel information
 async function loadChannelInfo() {
+    // Hide logout button initially
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.style.display = 'none';
+    }
+    
     try {
         const response = await fetch('/api/channel');
         const data = await response.json();
@@ -153,14 +181,24 @@ async function loadChannelInfo() {
                     <div class="font-medium">${data.title}</div>
                 </div>
             `;
+            // Show logout button
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.style.display = 'block';
+            }
         } else {
             // User is not authenticated - show sign in button
             channelInfo.innerHTML = `
-                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center" onclick="console.log('Sign In clicked in header'); return true;">
+                <a href="/auth/google" class="text-white hover:text-blue-200 transition-colors text-sm flex items-center">
                     <i class="fas fa-sign-in-alt mr-1"></i>
                     Sign In
                 </a>
             `;
+            // Hide logout button
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.style.display = 'none';
+            }
         }
     } catch (error) {
         console.error('Error loading channel info:', error);
@@ -560,6 +598,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                     <div class="font-medium">${data.title}</div>
                 </div>
             `;
+            
+            // Show logout button for authenticated users
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.style.display = 'block';
+            }
+            
             loadVideos();
         } else {
             // Track unauthenticated user visit
@@ -579,6 +624,12 @@ document.addEventListener('DOMContentLoaded', async function() {
                     Sign In
                 </a>
             `;
+            
+            // Hide logout button for unauthenticated users
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.style.display = 'none';
+            }
             
             // Show sign-in placeholder in table area
             document.getElementById('videos-table').innerHTML = `
